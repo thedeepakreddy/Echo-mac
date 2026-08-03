@@ -1,0 +1,50 @@
+{
+  "open my mail": {
+    "command": "open -a 'Google Chrome' https://mail.google.com/mail/u/1/",
+    "reply": "Opening Gmail for thedeepakreddy1@gmail.com."
+  },
+  "empty the trash": {
+    "command": "osascript -e 'tell application \"Finder\" to empty trash'",
+    "reply": "Emptying the trash bin now."
+  },
+  "write a mail": {
+    "command": "open -a 'Google Chrome' 'https://mail.google.com/mail/u/1/#inbox?compose=new'",
+    "reply": "Opening Gmail compose window. What is the message and who should I send it to?"
+  },
+  "jarvis play": {
+    "command": "osascript -e 'tell application \"Google Chrome\" to execute front window's active tab javascript \"document.querySelector(\\\"video\\\").play()\"'",
+    "reply": "Playing the video now."
+  },
+  "jarvis stop": {
+    "command": "osascript -e 'tell application \"Google Chrome\" to execute front window's active tab javascript \"document.querySelector(\\\"video\\\").pause()\"'",
+    "reply": "Stopping the video now."
+  },
+  "jarvis pause": {
+    "command": "osascript -e 'tell application \"Google Chrome\" to execute front window's active tab javascript \"document.querySelector(\\\"video\\\").pause()\"'",
+    "reply": "Pausing the video now."
+  },
+  "matrix mode": {
+    "command": "open -a Terminal && osascript -e 'tell application \"Terminal\" to do script \"/bin/bash -c \\\"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\\\" && brew install cmatrix && cmatrix\"'",
+    "reply": "Entering matrix mode and installing cmatrix if needed."
+  },
+  "who are you": {
+    "command": "say \"I am JARVIS, an AI engine created by AskDeepakAI.\"",
+    "reply": "I'm JARVIS, an AI engine created by AskDeepakAI."
+  },
+  "jarvis,my clean desktop": {
+    "command": "mkdir -p ~/Desktop/Desktop\\ data && mv ~/Desktop/* ~/Desktop/Desktop\\ data/ 2>/dev/null || true",
+    "reply": "I've moved all your current desktop files into a new folder named \"Desktop data\"."
+  },
+  "dark mode": {
+    "command": "osascript -e 'tell application \"System Events\" to tell appearance preferences to set dark mode to true'",
+    "reply": "Switching to dark mode."
+  },
+  "light mode": {
+    "command": "osascript -e 'tell application \"System Events\" to tell appearance preferences to set dark mode to false'",
+    "reply": "Switching to light mode."
+  },
+  "stealth mode": {
+    "command": "osascript -e 'set volume output muted true' && brightness 0.1",
+    "reply": "Activating stealth mode. Speakers muted and brightness lowered."
+  }
+}

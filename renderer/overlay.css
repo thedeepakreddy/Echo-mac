@@ -1,0 +1,620 @@
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #fff;
+  /* Allow clicking through the overlay */
+  pointer-events: none;
+}
+
+.hidden {
+  display: none !important;
+  opacity: 0;
+}
+
+/* =========================================
+   Phone-remote QR: scan to connect a phone
+   ========================================= */
+#remote-link {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none; /* the overlay is click-through; the QR is to look at */
+}
+#remote-link.show { opacity: 1; }
+#remote-link .rl-card {
+  position: relative;
+  background: rgba(6, 16, 22, 0.82);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(61, 216, 232, 0.4);
+  border-radius: 20px;
+  box-shadow: 0 0 60px rgba(61, 216, 232, 0.25), inset 0 0 30px rgba(61, 216, 232, 0.05);
+  padding: 26px 26px 20px;
+  text-align: center;
+  transform: scale(0.94);
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#remote-link #rl-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(61, 216, 232, 0.35);
+  background: rgba(10, 24, 30, 0.9);
+  color: #8fd4e0;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto; /* clickable even though the overlay is click-through */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#remote-link #rl-close:hover {
+  background: rgba(61, 216, 232, 0.2);
+  color: #eafcff;
+}
+#remote-link.show .rl-card { transform: scale(1); }
+#remote-link .rl-title {
+  font-family: "Courier New", ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: #52fefe;
+  margin-bottom: 16px;
+}
+#remote-link #rl-qr {
+  width: 300px;
+  height: 300px;
+  display: block;
+  border-radius: 10px;
+  image-rendering: pixelated; /* keep the QR crisp, never blurred */
+  background: #c9f7ff;
+}
+#remote-link .rl-url {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  color: #8fb9c4;
+  margin-top: 14px;
+  max-width: 300px;
+  word-break: break-all;
+  line-height: 1.5;
+}
+#remote-link .rl-hint {
+  font-size: 12px;
+  color: #5d7883;
+  margin-top: 10px;
+}
+
+/* =========================================
+   HOLOGRAPHIC TARGETING HUD
+   ========================================= */
+#targeting-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 150, 255, 0.05);
+  box-shadow: inset 0 0 100px rgba(0, 150, 255, 0.2);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: hud-fade-in 0.5s ease-out;
+}
+
+@keyframes hud-fade-in {
+  from { opacity: 0; transform: scale(1.1); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.reticle {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  border: 4px solid #00f0ff;
+  box-shadow: 0 0 15px #00f0ff, inset 0 0 15px #00f0ff;
+  opacity: 0.8;
+}
+
+.top-left { top: 20%; left: 20%; border-right: none; border-bottom: none; }
+.top-right { top: 20%; right: 20%; border-left: none; border-bottom: none; }
+.bottom-left { bottom: 20%; left: 20%; border-right: none; border-top: none; }
+.bottom-right { bottom: 20%; right: 20%; border-left: none; border-top: none; }
+
+.center-crosshair {
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  border: 2px solid rgba(0, 240, 255, 0.5);
+  border-radius: 50%;
+  box-shadow: 0 0 10px #00f0ff;
+  animation: spin 4s linear infinite;
+}
+
+.center-crosshair::before, .center-crosshair::after {
+  content: '';
+  position: absolute;
+  background: #00f0ff;
+}
+
+.center-crosshair::before { top: 50%; left: -20px; width: 90px; height: 2px; transform: translateY(-50%); }
+.center-crosshair::after { left: 50%; top: -20px; height: 90px; width: 2px; transform: translateX(-50%); }
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+.scanning-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: #00f0ff;
+  box-shadow: 0 0 20px 5px rgba(0, 240, 255, 0.6);
+  animation: scan 2s linear infinite;
+}
+
+@keyframes scan {
+  0% { top: 20%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 80%; opacity: 0; }
+}
+
+.status-text {
+  position: absolute;
+  bottom: 15%;
+  font-family: monospace;
+  font-size: 24px;
+  letter-spacing: 5px;
+  color: #00f0ff;
+  text-shadow: 0 0 10px #00f0ff;
+  animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse { from { opacity: 0.5; } to { opacity: 1; } }
+
+/* =========================================
+   CONTEXT-AWARE DATA PANE
+   ========================================= */
+#data-pane {
+  position: absolute;
+  top: 10vh;
+  right: -650px;
+  width: 600px;
+  height: 450px;
+  background: rgba(15, 20, 25, 0.85);
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  padding: 0;
+  overflow: hidden;
+  transition: right 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 90;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#data-pane.show {
+  right: 20px;
+}
+
+#data-pane h2 {
+  margin: 0;
+  padding: 12px 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  z-index: 10;
+}
+
+#data-pane h2::after {
+  display: none;
+}
+
+#data-pane-content {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #e0f7ff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  position: relative;
+  padding: 20px;
+  overflow: hidden;
+}
+
+#data-pane-content iframe {
+  border: none !important;
+  border-radius: 0 0 24px 24px;
+  display: block;
+}
+
+/* =========================================
+   FRIDAY PROTOCOL OVERRIDE
+   ========================================= */
+#friday-protocol {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(255, 0, 0, 0.3);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  animation: flash-red 1s infinite alternate;
+}
+
+@keyframes flash-red {
+  from { background: rgba(255, 0, 0, 0.2); }
+  to { background: rgba(255, 0, 0, 0.5); }
+}
+
+.red-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    linear-gradient(rgba(255, 0, 0, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.2) 1px, transparent 1px);
+  background-size: 50px 50px;
+  z-index: -1;
+}
+
+#friday-protocol h1 {
+  font-family: "Impact", sans-serif;
+  font-size: 8vw;
+  color: #ff0000;
+  text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000;
+  margin: 0;
+  letter-spacing: 10px;
+}
+
+#friday-protocol h2 {
+  font-family: monospace;
+  font-size: 2vw;
+  color: #fff;
+  text-shadow: 0 0 10px #ff0000;
+  letter-spacing: 5px;
+  margin-top: 20px;
+}
+
+/* =========================================
+   MEMORY SCRUBBING CAROUSEL
+   ========================================= */
+#memory-carousel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  perspective: 1000px;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+#memory-carousel.show {
+  opacity: 1;
+}
+
+.carousel-container {
+  width: 100%;
+  height: 300px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transform-style: preserve-3d;
+  gap: -50px; /* Overlap cards */
+}
+
+.memory-card {
+  width: 400px;
+  height: 250px;
+  background: rgba(10, 20, 30, 0.8);
+  border: 1px solid #00f0ff;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+  border-radius: 10px;
+  padding: 20px;
+  box-sizing: border-box;
+  font-family: monospace;
+  color: #00f0ff;
+  overflow: hidden;
+  position: absolute;
+  transition: transform 0.5s ease-out, opacity 0.5s ease-out;
+}
+
+.memory-card .ts {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.3);
+  padding-bottom: 5px;
+}
+
+.memory-card .txt {
+  font-size: 14px;
+  line-height: 1.4;
+  color: #fff;
+}
+
+/* ===========================================================================
+ * Live action feed — seeing Jarvis work.
+ *
+ * The whole overlay is click-through, so nothing here may ever look
+ * interactive. It reads like instrumentation on glass: thin type, low weight,
+ * and it fades out when idle so a quiet machine is not covered in chrome.
+ * ======================================================================== */
+
+:root {
+  --hud: #52fefe;
+  --hud-warn: #ffd479;
+  --hud-stop: #ff6b6b;
+  --hud-go: #7cf29a;
+}
+
+#action-feed {
+  position: fixed;
+  right: 22px;
+  bottom: 270px;            /* clears the reactor sitting bottom-right */
+  width: 340px;
+  max-height: 44vh;
+  padding: 10px 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--hud);
+  background: linear-gradient(180deg, rgba(4,14,18,.72), rgba(4,14,18,.52));
+  border: 1px solid rgba(82,254,254,.28);
+  border-radius: 4px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 26px rgba(82,254,254,.10), inset 0 0 22px rgba(82,254,254,.05);
+  opacity: 0;
+  transform: translateX(14px);
+  transition: opacity 420ms ease, transform 420ms ease;
+  pointer-events: none;
+  overflow: hidden;
+}
+#action-feed.live { opacity: 1; transform: none; }
+
+.feed-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 9.5px; letter-spacing: .22em; text-transform: uppercase;
+  padding-bottom: 7px; margin-bottom: 7px;
+  border-bottom: 1px solid rgba(82,254,254,.2);
+}
+.feed-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--hud); box-shadow: 0 0 7px var(--hud);
+  animation: feed-blink 1.9s ease-in-out infinite;
+}
+@keyframes feed-blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+.feed-title { flex: 1; opacity: .75; }
+.feed-state { color: var(--hud-go); opacity: .95; }
+
+#feed-lines { list-style: none; margin: 0; padding: 0; }
+#feed-lines li {
+  font-size: 11.5px; line-height: 1.5; padding: 1px 0;
+  display: flex; gap: 7px;
+  animation: feed-in 260ms ease-out;
+  opacity: .92;
+}
+/* Older lines recede rather than vanish, which reads as a log rather than a toast. */
+#feed-lines li:nth-child(n+7) { opacity: .5; }
+#feed-lines li:nth-child(n+10) { opacity: .28; }
+#feed-lines .t { opacity: .45; flex: none; }
+#feed-lines .m { flex: 1; word-break: break-word; }
+#feed-lines li.warn .m { color: var(--hud-warn); }
+#feed-lines li.stop .m { color: var(--hud-stop); }
+#feed-lines li.go   .m { color: var(--hud-go); }
+@keyframes feed-in { from { opacity:0; transform: translateX(10px) } to { opacity:.92; transform:none } }
+
+/* ---- strike marker: exactly where a click is about to land ---- */
+#strike { position: fixed; width: 0; height: 0; pointer-events: none; z-index: 40; }
+#strike.hidden { display: none; }
+.strike-ring, .strike-dot { position: absolute; border-radius: 50%; left: 0; top: 0; }
+.strike-ring {
+  width: 54px; height: 54px; margin: -27px 0 0 -27px;
+  border: 1.5px solid var(--hud);
+  animation: strike-out 620ms cubic-bezier(.2,.7,.3,1) forwards;
+}
+.strike-ring.delay { animation-delay: 130ms; }
+.strike-dot {
+  width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+  background: #fff; box-shadow: 0 0 12px var(--hud), 0 0 3px #fff;
+  animation: strike-pop 620ms ease-out forwards;
+}
+@keyframes strike-out {
+  from { transform: scale(.25); opacity: 1; }
+  to   { transform: scale(1.15); opacity: 0; }
+}
+@keyframes strike-pop { 0%{transform:scale(0);opacity:1} 45%{transform:scale(1.3)} 100%{transform:scale(.7);opacity:0} }
+
+/* ---- corner brackets tracing the element being acted on ---- */
+#target-box { position: fixed; pointer-events: none; z-index: 39; }
+#target-box.hidden { display: none; }
+.tb { position: absolute; width: 15px; height: 15px; border: 1.5px solid var(--hud); }
+.tb.tl { top:0; left:0; border-right:0; border-bottom:0; }
+.tb.tr { top:0; right:0; border-left:0; border-bottom:0; }
+.tb.bl { bottom:0; left:0; border-right:0; border-top:0; }
+.tb.br { bottom:0; right:0; border-left:0; border-top:0; }
+#target-box.on .tb { animation: tb-lock 300ms ease-out; }
+@keyframes tb-lock { from { opacity:0; transform: scale(1.9) } to { opacity:1; transform:none } }
+
+/* ---- sweep while reading the screen ---- */
+#scanbeam {
+  position: fixed; left: 0; right: 0; height: 130px; z-index: 38;
+  background: linear-gradient(180deg, transparent, rgba(82,254,254,.10) 45%, rgba(82,254,254,.24) 50%, rgba(82,254,254,.10) 55%, transparent);
+  pointer-events: none;
+  animation: sweep 1150ms ease-in-out;
+}
+#scanbeam.hidden { display: none; }
+@keyframes sweep { from { top: -130px } to { top: 100% } }
+
+@media (prefers-reduced-motion: reduce) {
+  #action-feed, #feed-lines li { transition: none; animation: none; }
+  .strike-ring, .strike-dot, #scanbeam, #target-box.on .tb { animation-duration: 1ms; }
+}
+
+/* ---- translated text, laid over the text it replaces ---- */
+#translation-layer { position: fixed; inset: 0; pointer-events: none; z-index: 41; }
+#translation-layer.hidden { display: none; }
+
+.tr-block {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  /* Opaque enough to hide the original underneath — a translation you have to
+     read THROUGH the foreign text is not a translation. */
+  background: rgba(4, 14, 20, .93);
+  border-left: 2px solid var(--hud);
+  color: #e8fbff;
+  font: 400 13px/1.32 -apple-system, "SF Pro Text", system-ui, sans-serif;
+  padding: 3px 7px;
+  border-radius: 2px;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, .55);
+  overflow: hidden;
+  animation: tr-in 180ms ease-out both;
+}
+/* Long translations overflow their source box; let them wrap rather than clip. */
+.tr-block span { display: block; width: 100%; }
+
+@keyframes tr-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; } }
+
+#translation-note {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: rgba(4, 14, 20, .92); color: var(--hud);
+  border: 1px solid rgba(82, 254, 254, .35); border-radius: 3px;
+  font: 500 11px/1 ui-monospace, "SF Mono", monospace;
+  letter-spacing: .12em; text-transform: uppercase;
+  padding: 7px 13px; z-index: 42; pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-block { animation-duration: 1ms; }
+}
+
+/* =========================================
+   TACTICAL CRT OVERLAY & SCANLINES
+   ========================================= */
+#crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  /* Removed black gradient vignette based on user request */
+}
+
+#scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0),
+    rgba(255,255,255,0) 50%,
+    rgba(0,0,0,0.1) 50%,
+    rgba(0,0,0,0.1)
+  );
+  background-size: 100% 4px;
+  opacity: 0.3;
+  animation: scanline-scroll 10s linear infinite;
+}
+
+@keyframes scanline-scroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100vh; }
+}
+
+/* =========================================
+   MATRIX RAIN
+   ========================================= */
+#matrix-rain {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10;
+  pointer-events: none;
+  display: none; /* Hard hidden by default */
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+}
+#matrix-rain.away {
+  display: block;
+  opacity: 0.8; /* High visibility for away mode screensaver */
+}
+
+#active-clones {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column; /* Stacked order */
+  gap: 15px;
+  pointer-events: none;
+}
+#active-clones.hidden {
+  display: none;
+}
+.clone-chip {
+  background: rgba(6, 16, 22, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(61, 216, 232, 0.6);
+  color: #52fefe;
+  font: 500 12px/1 ui-monospace, "SF Mono", monospace;
+  padding: 12px 16px;
+  border-radius: 8px;
+  box-shadow: 0 0 15px rgba(61, 216, 232, 0.3), inset 0 0 8px rgba(61, 216, 232, 0.1);
+  text-transform: uppercase;
+  animation: clone-hologram 3s infinite ease-in-out;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 180px; /* Small screen size */
+}
+.clone-chip-name {
+  font-weight: bold;
+  font-size: 13px;
+  letter-spacing: 1px;
+  border-bottom: 1px solid rgba(61, 216, 232, 0.3);
+  padding-bottom: 4px;
+}
+.clone-chip-progress {
+  font-size: 10px;
+  color: rgba(82, 254, 254, 0.8);
+  line-height: 1.3;
+}
+@keyframes clone-hologram {
+  0%, 100% { border-color: rgba(61, 216, 232, 0.4); box-shadow: 0 0 15px rgba(61, 216, 232, 0.3), inset 0 0 8px rgba(61, 216, 232, 0.1); opacity: 0.9; }
+  50% { border-color: rgba(61, 216, 232, 0.8); box-shadow: 0 0 25px rgba(61, 216, 232, 0.6), inset 0 0 12px rgba(61, 216, 232, 0.2); opacity: 1; }
+}
+

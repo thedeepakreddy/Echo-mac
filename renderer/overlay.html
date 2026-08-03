@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <!-- Tactical CRT Overlay & Scanlines -->
+    <div id="crt-overlay"></div>
+    <div id="scanlines"></div>
+    
+    <!-- Matrix Data Stream -->
+    <canvas id="matrix-rain"></canvas>
+
+    <!-- Active Clones Box -->
+    <div id="active-clones" class="hidden"></div>
+
+    <!-- Holographic Targeting HUD -->
+    <div id="targeting-hud" class="hidden">
+      <div class="reticle top-left"></div>
+      <div class="reticle top-right"></div>
+      <div class="reticle bottom-left"></div>
+      <div class="reticle bottom-right"></div>
+      <div class="center-crosshair"></div>
+      <div class="scanning-line"></div>
+      <div class="status-text">ANALYZING TARGET...</div>
+    </div>
+
+    <!-- Context-Aware Data Pane -->
+    <div id="data-pane" class="hidden">
+      <button id="data-pane-close" style="position: absolute; top: 15px; right: 15px; background: transparent; border: 1px solid #00f0ff; color: #00f0ff; cursor: pointer; font-family: monospace; font-size: 14px; padding: 2px 8px; border-radius: 4px; z-index: 100;">X</button>
+      <h2 id="data-pane-title">DOSSIER</h2>
+      <div id="data-pane-content"></div>
+    </div>
+
+    <!-- Friday Protocol Override -->
+    <div id="friday-protocol" class="hidden">
+      <div class="red-grid"></div>
+      <h1 class="glitch-text" data-text="SYSTEM LOCKED">SYSTEM LOCKED</h1>
+      <h2>UNAUTHORIZED EXFILTRATION DETECTED</h2>
+    </div>
+
+    <!-- Memory Scrubbing Carousel -->
+    <div id="memory-carousel" class="hidden">
+      <div class="carousel-container" id="carousel-track">
+        <!-- Cards injected via JS -->
+      </div>
+    </div>
+
+    <!-- Phone-remote link as a scannable QR code -->
+    <div id="remote-link" class="hidden">
+      <div class="rl-card">
+        <button id="rl-close" title="Close" aria-label="Close">&times;</button>
+        <div class="rl-title">SCAN TO CONNECT YOUR PHONE</div>
+        <img id="rl-qr" alt="QR code for the phone remote link">
+        <div class="rl-url" id="rl-url"></div>
+        <div class="rl-hint">Point your phone camera at this · then enter your password</div>
+      </div>
+    </div>
+
+    <!-- Live feed of what Jarvis is doing, so the work is visible as it happens -->
+    <div id="action-feed" aria-hidden="true">
+      <div class="feed-head">
+        <span class="feed-dot"></span><span class="feed-title">E.C.H.O.</span>
+        <span class="feed-state" id="feed-state">STANDBY</span>
+      </div>
+      <ol id="feed-lines"></ol>
+    </div>
+
+    <!-- Lands on the exact point about to be clicked -->
+    <div id="strike" class="hidden">
+      <span class="strike-ring"></span>
+      <span class="strike-ring delay"></span>
+      <span class="strike-dot"></span>
+    </div>
+
+    <!-- Traces the element being acted on -->
+    <div id="target-box" class="hidden"><span class="tb tl"></span><span class="tb tr"></span><span class="tb bl"></span><span class="tb br"></span></div>
+
+    <!-- Sweeps down the screen while reading it -->
+    <div id="scanbeam" class="hidden"></div>
+
+    <!-- Translated passages, drawn over the text they replace. -->
+    <div id="translation-layer" class="hidden"></div>
+
+    <script src="overlay.js"></script>
+  </body>
+</html>

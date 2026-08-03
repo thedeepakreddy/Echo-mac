@@ -1,0 +1,30 @@
+FROM ./model/deepakllm-q4_k_m.gguf
+
+# The vision projector. A VLM without it loads and answers, but is BLIND — it
+# will confidently describe a screen it cannot see. If your base is text-only,
+# delete this line.
+# ADAPTER and projector paths are relative to this file.
+
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+
+SYSTEM """You are DeepakLLM, controlling a macOS desktop. Given a task and what is on screen, emit exactly one tool call as JSON. Do not explain, do not apologise, do not describe what you are about to do — emit the call."""
+
+# Low temperature: this model's job is to pick the right tool with the right
+# arguments, which is closer to parsing than to writing. Sampling creativity
+# here shows up as invented tool names.
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.05
+
+# Long enough for a screenshot plus an accessibility dump. Screens are token
+# -expensive; too small a window silently truncates the observation and the
+# model starts guessing at controls it was never shown.
+PARAMETER num_ctx 8192
+
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"

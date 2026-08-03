@@ -1,0 +1,39 @@
+{
+  "brain": "claude",
+
+  "claude": {
+    "model": "claude-opus-4-8",
+    "systemPromptPreset": "claude_code"
+  },
+
+  "gemini": {
+    "model": "gemini-2.0-flash",
+    "apiKeyEnv": "GEMINI_API_KEY"
+  },
+
+  "voice": {
+    "wakeWord": true,
+    "wakeEngine": "whisper",
+    "bargeIn": false,
+    "inputDevice": -1,
+    "picovoiceAccessKeyEnv": "PICOVOICE_ACCESS_KEY",
+    "sensitivity": 0.6,
+    "wakeSound": "assets/wake.wav",
+    "wakeSoundSeconds": 0,
+    "ttsVoice": "Daniel",
+    "ttsEnabled": true,
+    "sttModel": "models/ggml-base.en.bin",
+    "whisperBin": "/opt/homebrew/bin/whisper-cli",
+    "silenceMs": 900,
+    "maxUtteranceMs": 15000
+  },
+
+  "control": {
+    "cliclickBin": "/opt/homebrew/bin/cliclick",
+    "workingDir": "~"
+  },
+
+  "hud": {
+    "startListeningOnLaunch": true
+  }
+}

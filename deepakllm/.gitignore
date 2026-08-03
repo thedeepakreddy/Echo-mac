@@ -1,0 +1,12 @@
+# Model weights and training data: far too large for git, and the dataset is a
+# record of what was on screen. Back these up deliberately, not by committing.
+model/*.gguf
+model/*.safetensors
+adapter/*.safetensors
+adapter/*.bin
+dataset/screens/
+dataset/training.jsonl
+
+# Keep the small descriptive files that make the folder self-explanatory.
+!dataset/manifest.json
+!.gitignore

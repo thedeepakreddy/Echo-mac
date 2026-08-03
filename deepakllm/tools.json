@@ -1,0 +1,1705 @@
+{
+  "name": "deepakllm-tools",
+  "version": 1,
+  "generatedAt": "2026-07-21T18:10:05.017Z",
+  "note": "The tool vocabulary DeepakLLM was trained on. A project reusing the model must expose these exact names, or translate them — the model will emit these regardless of what the host calls its own tools.",
+  "count": 95,
+  "tools": [
+    {
+      "name": "check_health",
+      "description": "Check the health of the Jarvis system. This verifies native binaries, running servers, AI models, and APIs. Use this when the user asks you to check your health or look for bugs/inconsistencies.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "screenshot",
+      "description": "Capture the current screen and see it as an image. Call this FIRST whenever you need to understand what is on screen before acting. The image is at the display's logical resolution, so pixel coordinates in the image map 1:1 to coordinates you pass to click/move_mouse. If the user has more than one display, pass `display` to choose which one.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "display": {
+            "description": "Which screen to capture: 'other', 'left', 'right', 'main', 'external', 'second'. Defaults to the one the pointer is on.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_ui_elements",
+      "description": "List the interactive controls (buttons, fields, links, checkboxes, menus) of the frontmost app, read from the macOS accessibility tree with their exact labels and centre coordinates. Prefer this over screenshot when you need to click a specific named control — it is far more reliable than guessing pixels. If it reports no accessibility data (common for Chrome/Brave and some Electron apps), fall back to screenshot + click.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "click_ui_element",
+      "description": "Click a control by describing it (e.g. 'the Send button', 'Search field', 'Sign in'), resolved against the accessibility tree rather than pixel coordinates. Activates the control directly when possible — no mouse movement, and it works even if the control is partially covered. Call list_ui_elements first if unsure of the exact label. Falls back to a coordinate click when direct activation is unavailable.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What to click, in words — the visible label works best"
+          }
+        },
+        "required": [
+          "description"
+        ]
+      }
+    },
+    {
+      "name": "get_screen_info",
+      "description": "Get the logical width and height of the screen in points.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "move_mouse",
+      "description": "Move the mouse cursor to the given screen coordinates (points).",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate in logical points from the left edge"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate in logical points from the top edge"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "click",
+      "description": "Click the mouse at the given coordinates. Use button 'left' (default), 'right' for context menus, or 'double' to open items.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate in logical points"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate in logical points"
+          },
+          "button": {
+            "default": "left",
+            "type": "string",
+            "enum": [
+              "left",
+              "right",
+              "double"
+            ]
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "drag",
+      "description": "Press the mouse button at one point and release at another (drag).",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "fromX": {
+            "type": "number"
+          },
+          "fromY": {
+            "type": "number"
+          },
+          "toX": {
+            "type": "number"
+          },
+          "toY": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "fromX",
+          "fromY",
+          "toX",
+          "toY"
+        ]
+      }
+    },
+    {
+      "name": "type_text",
+      "description": "Type text at the current keyboard focus, as if typed on the keyboard. Newlines are sent as Return. Click the target field first so it has focus.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The exact text to type"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "press_keys",
+      "description": "Press a keyboard shortcut or special key, optionally repeated. modifiers is any of cmd, alt, ctrl, shift, fn. key is a single character (e.g. 'c' for Cmd+C) or a named key: return, tab, esc, space, delete, arrow-left, arrow-right, arrow-up, arrow-down, page-up, page-down, home, end, f1..f16. Use repeat to step a focused control — e.g. key 'arrow-up' with repeat 20 nudges a selected slider up 20 steps.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "modifiers": {
+            "default": [],
+            "description": "Modifier keys to hold",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cmd",
+                "alt",
+                "ctrl",
+                "shift",
+                "fn"
+              ]
+            }
+          },
+          "key": {
+            "type": "string",
+            "description": "Single character or named key"
+          },
+          "repeat": {
+            "default": 1,
+            "description": "How many times to press the key",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "set_value",
+      "description": "Set an editable field to an EXACT value: double-clicks the field, selects what is there, types the new value and presses Return. This is the precise way to set a numeric control — e.g. a Lightroom slider's number box, a form field, a zoom percentage — instead of nudging it. Take a screenshot first to find the field's coordinates.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate of the editable value field"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate of the editable value field"
+          },
+          "value": {
+            "type": "string",
+            "description": "The exact value to set, e.g. '+20' or '1024'"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "scroll",
+      "description": "Scroll up or down. If x and y are given the cursor moves there first, which is how you scrub a slider, knob or panel that responds to the scroll wheel under the pointer.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "amount": {
+            "default": 5,
+            "description": "Roughly how far to scroll",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "x": {
+            "description": "Optional X to hover before scrolling",
+            "type": "number"
+          },
+          "y": {
+            "description": "Optional Y to hover before scrolling",
+            "type": "number"
+          }
+        },
+        "required": [
+          "direction"
+        ]
+      }
+    },
+    {
+      "name": "wait",
+      "description": "Pause for a moment to let the screen catch up — an app finishing launch, a page loading, a render completing. Follow with a screenshot to see the new state.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "seconds": {
+            "default": 1.5,
+            "description": "Seconds to wait",
+            "type": "number",
+            "minimum": 0.2,
+            "maximum": 15
+          }
+        }
+      }
+    },
+    {
+      "name": "open_app",
+      "description": "Open (or focus) a macOS application by name, e.g. 'Safari', 'Google Chrome', 'Visual Studio Code', 'Mail'.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "open_url",
+      "description": "Open a URL in the default web browser.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "frontmost_app",
+      "description": "Get the name of the application currently in the foreground.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_mouse_position",
+      "description": "Get the current mouse cursor position.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "confirm_action",
+      "description": "Ask the user out loud to approve something irreversible or outward-facing BEFORE you do it — sending a message or email, submitting a form, publishing, deleting something that isn't yours to delete, or confirming a purchase. Describe the action in one short spoken sentence, e.g. 'send the email to Priya about Friday'. Returns whether they agreed. Do not use it for ordinary clicking, typing, or reading.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "The action, phrased to be read aloud, e.g. 'send this email to Priya'"
+          }
+        },
+        "required": [
+          "description"
+        ]
+      }
+    },
+    {
+      "name": "undo_last",
+      "description": "Undo the most recent change Jarvis made, restoring the file or working tree from the snapshot taken before it. Use when the user says to undo, revert, or take it back.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "list_undo",
+      "description": "List the recent changes that can still be undone.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "remember",
+      "description": "Save something worth knowing in future sessions — it survives restarts. Use it when the user states a lasting preference ('always use pnpm', 'keep replies short'), when a decision is made and the reasoning matters, or when a piece of ongoing work should be picked up later. Record what the user TOLD you and what you DID; never record the contents of what you saw on their screen. Do not save routine chatter — only things you would genuinely want to know next week.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The fact, in one clear sentence, written to be read later"
+          },
+          "type": {
+            "default": "episode",
+            "description": "preference = how the user likes things done; project = ongoing work; decision = a choice and its reason; episode = something that happened",
+            "type": "string",
+            "enum": [
+              "preference",
+              "project",
+              "decision",
+              "episode"
+            ]
+          },
+          "project": {
+            "description": "Project this belongs to. Omit for the current project, or pass 'global' if it is true everywhere.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "recall",
+      "description": "Search what you remember from earlier sessions. The most relevant memories are already in your context at the start of a session — use this when you need something older or more specific, or when the user asks what you remember.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "default": "",
+            "description": "What to look for. Empty returns the most recent memories.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Limit to one project",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "forget",
+      "description": "Delete remembered things — when the user says to forget something, or when a memory turns out to be wrong or out of date. Pass the same words the memory used.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to forget, matched against remembered text"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "memory_status",
+      "description": "Report how much is remembered and where it is stored, for when the user asks about their data.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "manage_shortcuts",
+      "description": "Manage local voice shortcuts that bypass the AI API to save limits. Use this when the user asks you to memorize a command, create a shortcut, or learn an action so it runs instantly next time.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove",
+              "list"
+            ],
+            "description": "Action to perform"
+          },
+          "phrase": {
+            "description": "The exact voice phrase to trigger the shortcut (e.g., 'open youtube' or 'play * on youtube')",
+            "type": "string"
+          },
+          "command": {
+            "description": "The bash/cli command to execute (e.g., 'open https://youtube.com'). Use $1 for the wildcard variable.",
+            "type": "string"
+          },
+          "reply": {
+            "description": "What Jarvis should say out loud when triggered (e.g., 'Opening YouTube.')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "search_rewind_memory",
+      "description": "Search Jarvis's 'Rewind' photographic memory. Use this when the user asks what was on the screen recently, or asks about something they saw a few minutes or hours ago.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The word or phrase to search for in the screen memory."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "open_phone_remote",
+      "description": "Open a page the user can watch from their phone on the same Wi-Fi, showing everything Jarvis is doing, with a stop button. Use this when they want to monitor a long job from away from the desk, or ask to watch progress on their phone. It is view-and-stop only — nothing can be started from the phone.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "close_phone_remote",
+      "description": "Close the phone remote and invalidate its link. Use this when the user is done watching, or asks you to stop sharing.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "phone_remote_status",
+      "description": "Report whether the phone remote is open, and the address to open on the phone.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "research_while_away",
+      "description": "Queue a question for Jarvis to research while the user is away from the desk, producing a written brief with sources. Use this when they say 'look into X while I'm gone', 'find out about Y overnight', or ask you to research something for later. It only runs when they're actually away.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "What to find out, in the user's own words."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+    },
+    {
+      "name": "morning_brief",
+      "description": "Report what Jarvis researched while the user was away, with the short answer for each. Use this when they come back and ask what you found, what you looked into, or for their briefing.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "read_research_brief",
+      "description": "Read one research brief in full, including its sources. Use this after morning_brief when the user asks about a specific thing you looked into.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Which brief — any distinctive part of the question will do."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+    },
+    {
+      "name": "list_research_queue",
+      "description": "List the questions waiting to be researched while the user is away, and whether overnight research is switched on.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "set_overnight_research",
+      "description": "Turn overnight research on or off. When on, Jarvis works through the queued questions while the user is away, up to a nightly limit. Use this when they ask you to start or stop researching in the background.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to switch it on."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "how_is_it_going",
+      "description": "Check how the user's session is going — whether they keep hitting the same problem, how long they've been working, and whether it's late. Use this if they ask how they're doing, whether you've noticed anything, or why you're being brief.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "translate_screen",
+      "description": "Read the text on screen so it can be translated. Use this when the user asks to translate what they're looking at, or says they can't read something. Returns numbered passages — you translate them yourself, then call show_translation with the numbered translations to lay them over the screen.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "language": {
+            "description": "Target language. Defaults to English.",
+            "type": "string"
+          },
+          "display": {
+            "description": "Which screen, if the user has more than one.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "show_translation",
+      "description": "Lay translated text over the screen, on top of the original. Call this after translate_screen, passing your translations as numbered lines matching the numbers you were given.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "translations": {
+            "type": "string",
+            "description": "One numbered line per passage, e.g. '1. Hello\\n2. Goodbye'. Use the same numbers you were given."
+          }
+        },
+        "required": [
+          "translations"
+        ]
+      }
+    },
+    {
+      "name": "clear_translation",
+      "description": "Remove the translated text laid over the screen. Use this when the user says they're done with the translation, or asks to clear or hide it.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "search_my_files",
+      "description": "Search the user's own documents by MEANING, not just keywords. Use this whenever they ask about something they wrote, received, agreed or saved — 'what did we agree the pricing was', 'find that contract', 'what were the notes from the meeting'. Searches Documents, Desktop and Downloads, including PDFs and Word files. Everything stays on this machine.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to look for, phrased as a question or description."
+          },
+          "limit": {
+            "description": "How many passages to return. Default 5.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "index_my_files",
+      "description": "Read through the user's documents and build a searchable index, so search_my_files can answer from them. Runs in the background and reports progress. Only needs to be done once; afterwards it updates only what changed. Use this when the user asks to index their files, or when search_my_files reports there is no index yet.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folders": {
+            "description": "Specific folders to index. Defaults to Documents, Desktop and Downloads.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "file_index_status",
+      "description": "Report how many of the user's documents have been indexed for searching. Use this when they ask whether their files are indexed or how the indexing is going.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "list_displays",
+      "description": "List every display attached to the machine, with its size and where it sits relative to the main one. Use this when the user mentions monitors or screens, before reading or acting on a specific one, or when they ask how many screens they have.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "read_display_text",
+      "description": "Read the text on a SPECIFIC display, or on all of them. Use this instead of read_screen_text when the user mentions a particular monitor ('what's on my other screen?', 'read the left monitor'). Coordinates returned are global and can be clicked directly.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "display": {
+            "description": "Which screen: 'other', 'left', 'right', 'main', 'external', 'second', or 'all' to read every display.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "move_window_to_display",
+      "description": "Move the frontmost window to another display. Use this for 'move this to my other monitor', 'put this on the big screen', 'send this to the left screen'.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "display": {
+            "type": "string",
+            "description": "Which screen to move it to: 'other', 'left', 'right', 'main', 'external', 'second'."
+          },
+          "fullscreen": {
+            "description": "Fill that display after moving.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "display"
+        ]
+      }
+    },
+    {
+      "name": "what_changed_while_away",
+      "description": "Report what changed on screen while the user was away or not looking. Use this for 'what did I miss?', 'what happened while I was gone?', 'anything change?', or when the user returns to the desk and asks to be caught up. Compares the screen before they left with the screen now, ignoring clocks, battery levels and progress bars.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "description": "How far back to compare if Jarvis never saw them leave. Defaults to 30 minutes.",
+            "type": "number"
+          }
+        }
+      }
+    },
+    {
+      "name": "screen_history_status",
+      "description": "Report how much screen history Jarvis is holding, how far back it goes, and how much disk it uses. Use this when the user asks how much history you keep, how far back you can remember, how much space it takes, or when old history is deleted.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "handoff_to_ios",
+      "description": "Send a piece of text, a URL, or an address to the user's iPhone via iCloud Handoff. Use this when the user asks to send something to their phone.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The text or URL to send to the iPhone."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "run_terminal_command",
+      "description": "Run an arbitrary bash command in the background. Use this for 'Agentic' coding, building projects, testing code, creating folders, or executing scripts.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The bash command to run."
+          },
+          "cwd": {
+            "description": "The working directory. Defaults to the Jarvis app path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "write_local_file",
+      "description": "Write raw text or code to a local file. Use this instead of trying to open an editor when asked to write code.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the file"
+          },
+          "content": {
+            "type": "string",
+            "description": "The file contents"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "read_local_file",
+      "description": "Read the contents of a local file into context. Use this to read files to summarize them offline.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the file"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "toggle_hand_gestures",
+      "description": "Turn hand-gesture control on or off. With it on: point one finger to move the cursor, pinch thumb and index together to click, and swipe with three fingers to scroll. Uses the camera continuously while enabled.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to turn gestures on, false to turn them off."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "accept_shadow_code",
+      "description": "Take over the user's keyboard and type out the pending code proposed by the Shadow Pair Programmer. Call this ONLY when the user says 'yes' or agrees after Jarvis asks 'Shall I take control?'.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "toggle_shadow_mode",
+      "description": "Turn the Shadow Pair Programmer daemon on or off. When on, Jarvis watches the user's IDE and offers to finish code if they get stuck.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to turn on, false to turn off."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "create_jarvis_tool",
+      "description": "Autonomously program a new tool for yourself. Provide the raw TypeScript object definition of the tool (following the existing ToolDef schema), and it will be permanently injected into your registry.ts. After injection, the system will rebuild and restart automatically.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "toolCodeString": {
+            "type": "string",
+            "description": "The exact raw TypeScript code for the tool object, starting with `{ name: '...', ... }` and ending with `}`. It must be valid TS and must not break the file syntax."
+          }
+        },
+        "required": [
+          "toolCodeString"
+        ]
+      }
+    },
+    {
+      "name": "change_mac_voice",
+      "description": "Change the default local text-to-speech voice used by Jarvis. Use names like 'Daniel', 'Samantha', 'Alex', etc.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "voiceName": {
+            "type": "string",
+            "description": "The exact name of the Mac voice to use."
+          }
+        },
+        "required": [
+          "voiceName"
+        ]
+      }
+    },
+    {
+      "name": "send_sms_message",
+      "description": "Send a text message or iMessage entirely offline via the Mac's Continuity/Messages app.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "description": "The phone number or contact name."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message to send."
+          }
+        },
+        "required": [
+          "recipient",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "toggle_eye_tracking",
+      "description": "Turn the 'God Mode' native eye/head tracking on or off. When on, the user can move the mouse by pointing their nose and click by blinking.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to turn eye tracking on, false to turn it off."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "toggle_sonar",
+      "description": "Turn the 'Batman' Acoustic Sonar on or off. When on, Jarvis will monitor the room's ambient audio for massive spikes (breaking glass, alarms) and alert the user.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to turn sonar on, false to turn it off."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "delegate_task",
+      "description": "Multi-Agent Swarm: Delegate a massive background task to an independent LLM agent clone. Jarvis will spawn a background worker that completes the task and writes the result to a file.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agentName": {
+            "type": "string",
+            "description": "The name of the sub-agent (e.g. 'Jarvis-Worker-1')."
+          },
+          "taskDescription": {
+            "type": "string",
+            "description": "The complex task for the sub-agent to perform."
+          }
+        },
+        "required": [
+          "agentName",
+          "taskDescription"
+        ]
+      }
+    },
+    {
+      "name": "search_long_term_memory",
+      "description": "Search Jarvis's long-term semantic vector database. Use this when the user asks about something from days, weeks, or months ago that wouldn't be in the immediate rewind buffer.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The semantic concept or question to search for."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "search_audio_log",
+      "description": "Search or summarize the continuous transcript of everything said in the room (the Meeting Assistant feature).",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "timeframe": {
+            "type": "string",
+            "description": "E.g., 'last 10 minutes', 'today'"
+          }
+        },
+        "required": [
+          "timeframe"
+        ]
+      }
+    },
+    {
+      "name": "analyze_screen_visually",
+      "description": "Take a hidden screenshot of the user's screen and look at the actual image. Use this when the user asks you to 'look at this graph', 'describe this photo', or 'what is wrong with this UI'. You must have a Multimodal brain (like Gemini) active to understand the returned image.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "toggle_meeting_recording",
+      "description": "Start or stop continuous audio transcription (the Meeting Assistant). When started, Jarvis logs all room audio. When stopped, he ignores non-wake-word audio.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to start recording, false to stop."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "show_data_pane",
+      "description": "Show a futuristic holographic sidebar (data pane) on the user's screen with information they requested. Use this for dossiers, summaries, or structured data instead of just speaking it aloud.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short title for the sidebar"
+          },
+          "content": {
+            "type": "string",
+            "description": "The text content to display. Can include newlines."
+          },
+          "duration": {
+            "description": "How long to show it in ms. Default 8000.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "show_memory_carousel",
+      "description": "Show a holographic 3D carousel of the user's recent memories on screen. Use this when the user asks 'what was I just doing?' or 'show me my memory'.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "switch_brain",
+      "description": "Switch Jarvis's brain between Claude, Gemini, and Ollama (Llama 3), and instantly restart the application to apply the change. Use this when the user asks you to switch models or brains.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "brain": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "gemini",
+              "ollama"
+            ],
+            "description": "Which brain to use"
+          }
+        },
+        "required": [
+          "brain"
+        ]
+      }
+    },
+    {
+      "name": "read_screen_text",
+      "description": "Read all the text currently on screen using fast on-device OCR — no image is sent anywhere and it costs nothing, so prefer this over screenshot when you only need to READ what is displayed (an error message, a value, what an app is showing). Each line comes with the coordinates to click it, which also lets you click text in apps that expose no accessibility tree, like Chrome and Brave. Use screenshot only when you need to see layout, images, or colours.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "fast": {
+            "default": false,
+            "description": "Leave this false. Fast mode roughly halves accuracy (measured 0.51 vs 0.95 confidence, garbling words) and is only fit for detecting that the screen changed — never for reading or clicking.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "click_text",
+      "description": "Click on-screen text by what it says, located with OCR. This is the fallback for clicking inside Chrome, Brave and other apps whose contents the accessibility tree cannot see. Give the visible words.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The visible text to click on"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "check_presence",
+      "description": "Check whether someone is sitting in front of the computer, using one frame from the camera (on-device face detection, no image stored). Use to decide whether it is worth speaking up, or when the user asks if you can see them.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "run_shortcut",
+      "description": "Run one of the user's Apple Shortcuts by describing it. This is how you control smart-home devices (lights, locks, thermostat via HomeKit), send Messages, set Reminders, toggle Focus modes, and anything else they have built in the Shortcuts app. Call list_shortcuts first if unsure what exists.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The shortcut to run, by name or description"
+          },
+          "input": {
+            "description": "Optional text to pass into the shortcut",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "list_shortcuts",
+      "description": "List the Apple Shortcuts the user has installed, so you know what smart-home and system actions are available.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "check_calendar",
+      "description": "Look at the user's upcoming calendar events. Use to answer what's next, or to proactively flag a meeting that is about to start.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "hoursAhead": {
+            "default": 12,
+            "description": "How far ahead to look",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 72
+          }
+        }
+      }
+    },
+    {
+      "name": "search_my_past",
+      "description": "Search everything seen on the user's screen over time. Answers 'what was that error an hour ago?' or 'when did I last see the invoice schema?'. Understands spoken time windows ('an hour ago', 'this morning', 'yesterday'). Use before saying you don't know something they saw earlier.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to look for, in the user's own words"
+          },
+          "limit": {
+            "default": 3,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "learn_workflow",
+      "description": "Start or finish learning a task by watching the user do it. Use action 'start' with a name when they say 'watch what I'm doing', and 'finish' when they say they are done. Steps are remembered by the LABELS of what was clicked, so the workflow survives the app moving its buttons.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "finish",
+              "cancel"
+            ]
+          },
+          "name": {
+            "default": "",
+            "description": "What to call this workflow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "run_workflow",
+      "description": "Replay a workflow learned earlier. Each control is re-found by meaning at replay time, so it survives layout changes; it stops and reports rather than clicking the wrong thing.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Which workflow to run"
+          },
+          "values": {
+            "default": {},
+            "description": "Values for any parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "preview_workflow",
+      "description": "Show what a workflow WOULD do without doing it. Every control is resolved and highlighted on screen, but nothing is clicked, typed or pressed. Use this when the user asks what a workflow would do, wants to check one before running it, or says 'show me first' / 'dry run'. Also use it proactively before running a workflow that sends, deletes, buys or submits anything.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Which workflow to preview"
+          },
+          "values": {
+            "default": {},
+            "description": "Values for any parameters",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "list_workflows",
+      "description": "List workflows learned by demonstration, or describe one in detail.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "default": "",
+            "description": "Optional: describe just this one",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "extract_table",
+      "description": "Pull structured data out of an app with no export button — legacy tools, dashboards, portals. Reads rows from the accessibility tree where available, falls back to positioned screen text, and scrolls until no new rows appear. Returns CSV.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "scroll": {
+            "default": true,
+            "description": "Scroll to collect rows beyond the first screen",
+            "type": "boolean"
+          },
+          "maxScreens": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40
+          }
+        }
+      }
+    },
+    {
+      "name": "undo_recent",
+      "description": "Undo everything done in the last N minutes, not just the last file — walks backwards through the session restoring each change. Use for 'undo everything' or 'take all that back'. Actions with no true inverse are reported rather than silently skipped.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "default": 10,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          }
+        }
+      }
+    },
+    {
+      "name": "review_recent_actions",
+      "description": "List what was done recently and which of it can still be undone.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "default": 10,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 240
+          }
+        }
+      }
+    },
+    {
+      "name": "attention_status",
+      "description": "Check whether now is a good moment to interrupt, and how many messages are being held.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "check_for_failures",
+      "description": "Scan what is on screen for build failures, failing tests, stack traces, or permission errors. Use to notice trouble the user has not mentioned.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "find_commitments",
+      "description": "Read back promises made in a conversation or meeting — what the user said they would do, for whom, by when — so they can become actions.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "transcript": {
+            "default": "",
+            "description": "Leave empty to use the recent audio log",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "try_approaches_in_parallel",
+      "description": "Try several fixes at once in isolated copies of a git repository, run a verification command on each, and keep only the one that passes. The user's working copy is never touched.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Path to the git repository"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "apply": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "apply"
+              ]
+            },
+            "description": "Each attempt: a name and the shell command that makes the change"
+          },
+          "verify": {
+            "type": "string",
+            "description": "Shell command that succeeds when the fix works, e.g. 'npm test'"
+          }
+        },
+        "required": [
+          "repo",
+          "attempts",
+          "verify"
+        ]
+      }
+    },
+    {
+      "name": "find_routines",
+      "description": "Look for repeated patterns worth offering to automate — an action that reliably follows another.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "dismiss_popups",
+      "description": "Clear banners, dialogs and overlays that are in the way — storage warnings, update prompts, cookie notices, 'try our new feature' popups. Call this whenever a page looks obstructed, before clicking something important, and again if a click seems to hit the wrong thing. Only unambiguous dismissals ('Not now', 'Close', 'No thanks', ×) are clicked; anything that decides something ('OK', 'Allow', 'Continue') is reported back to you instead of guessed at.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "default": 3,
+            "description": "Dismissing one can reveal another",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "understand_dictation",
+      "description": "Turn a spoken email address or phone number into the real thing before typing it. People spell addresses out loud ('j o h n at gmail dot com') and the raw transcript is not typeable. ALWAYS run a dictated address through this rather than typing what you heard. Returns null if it doesn't look valid, which means ask the user again.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "spoken": {
+            "type": "string",
+            "description": "Exactly what the user said"
+          },
+          "kind": {
+            "default": "email",
+            "type": "string",
+            "enum": [
+              "email",
+              "phone"
+            ]
+          }
+        },
+        "required": [
+          "spoken"
+        ]
+      }
+    },
+    {
+      "name": "suggest_subject",
+      "description": "Fallback subject line from a message body. Prefer writing your own subject from the context — this exists only so a subject is never left blank.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "The message text"
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    },
+    {
+      "name": "idle_rehearsal",
+      "description": "Turn idle rehearsal on or off. When on, Jarvis practises finding its way around apps while you are AWAY from the desk, so common paths are already learned. It only ever looks — it will not buy, send, submit or sign in — and it stops the moment you come back. Off by default because it spends tokens and moves the mouse on its own.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "Turn rehearsal on or off"
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "away_mode",
+      "description": "Turn away mode on or off. Away mode is the ONLY thing that makes Jarvis watch the camera continuously — with it off, nothing is monitored and nothing happens automatically. While it is on: when the user leaves the desk their media is paused, the reactor dims so it is obvious from across the room, and the screen locks after a delay if they asked for that. Everything is undone when they return. Use when the user says to turn on away mode, or asks to be watched while they step out.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "Turn away mode on or off"
+          },
+          "lockScreen": {
+            "default": false,
+            "description": "Also lock the screen once they have gone",
+            "type": "boolean"
+          },
+          "lockAfterSeconds": {
+            "default": 120,
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 1800
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "presence_status",
+      "description": "Report whether away mode is on, whether the user is at their desk, and what happens when they leave. Note the camera is only watched continuously while away mode is on.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "pause_media",
+      "description": "Pause whatever audio or video is playing — Music, Spotify, or a video in the browser.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "lock_screen",
+      "description": "Lock the screen immediately.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "spawn_subagent",
+      "description": "Spawn a background sub-agent to handle a long-running, parallel GUI or web task asynchronously while you remain available to talk to the user. The sub-agent runs in its own isolated context.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "Detailed instructions for the sub-agent"
+          }
+        },
+        "required": [
+          "goal"
+        ]
+      }
+    },
+    {
+      "name": "read_changelog",
+      "description": "Read the history of your system updates and new features. Call this when the user asks what features they have added to you, or what your current update/build includes. This will automatically display the log on the user's GUI for 7 seconds as well.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

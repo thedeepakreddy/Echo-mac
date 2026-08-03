@@ -1,0 +1,11 @@
+[
+  {
+    "date": "2026-07-21",
+    "features": [
+      "Reflex Memory Cache: Zero-latency navigation by caching successful UI click sequences and re-applying them without vision processing.",
+      "Multi-Agent Delegation: Spawns isolated background sub-agents to handle long-running web tasks parallel to the main conversation.",
+      "Continuous Dreaming: Background idle simulation loop that explores interfaces and learns new web skills while the system is inactive.",
+      "Agentic Vision Workflow: System-injected vision navigation for precise, popup-resilient application driving instead of blind keystrokes."
+    ]
+  }
+]

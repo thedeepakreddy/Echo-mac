@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Echo — Orbital</title>
+  <link rel="stylesheet" href="orbital.css" />
+</head>
+<body>
+  <!-- Echo chrome around the live feed -->
+  <div id="panel">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+
+    <!-- Draggable title bar -->
+    <header id="bar">
+      <span class="live"><span class="live-dot"></span>LIVE</span>
+      <span class="title">ORBITAL TRACKING · STARPORT FEED</span>
+      <span class="spacer"></span>
+      <button id="reload" title="Reload">⟳</button>
+      <button id="close" title="Close">✕</button>
+    </header>
+
+    <!-- Stage: the loading overlay sits above the webview until it's ready -->
+    <div id="stage">
+      <div id="loading">
+        <div class="ring"></div>
+        <div class="ldr-text">ESTABLISHING ORBITAL LINK</div>
+        <div class="ldr-sub" id="ldrsub">acquiring satellite feed…</div>
+      </div>
+      <webview
+        id="feed"
+        src="https://starport.im"
+        allowpopups="false"
+        partition="persist:orbital"
+      ></webview>
+    </div>
+  </div>
+
+  <script src="orbital.js"></script>
+</body>
+</html>

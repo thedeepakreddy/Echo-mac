@@ -1,0 +1,1 @@
+Quantum entanglement is a phenomenon where two or more particles become connected in such a way that the state of one particle instantly influences the state of the other, no matter how far apart they are. Imagine two magic dice: if you roll one and get a six, the other one will always show a six immediately, even if it's on the other side of the galaxy.

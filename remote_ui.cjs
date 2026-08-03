@@ -1,0 +1,422 @@
+module.exports = function(tokStr) {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Echo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=SF+Pro+Display:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #000000;
+    --surface: rgba(28, 28, 30, 0.7);
+    --surface-solid: #1c1c1e;
+    --text: #ffffff;
+    --text-dim: #98989d;
+    --accent: #0a84ff;
+    --danger: #ff453a;
+    --border: rgba(255, 255, 255, 0.15);
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; width: 100%; overflow: hidden; touch-action: pan-y; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 var(--font);
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  button {
+    font-family: var(--font); font-size: 15px; font-weight: 600;
+    border-radius: 14px; border: none;
+    background: var(--accent); color: #fff;
+    padding: 14px 20px; cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s;
+  }
+  button:active { transform: scale(0.96); opacity: 0.8; }
+  .danger { background: var(--danger); }
+  .secondary { background: var(--surface-solid); border: 1px solid var(--border); color: var(--text); }
+  
+  #login { 
+    display: flex; flex-direction: column; justify-content: space-between; 
+    height: 100%; padding: 40px 24px; animation: fadein 0.6s ease-out; 
+  }
+  .login-top { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .login-top .mark { width: 80px; height: 80px; margin-bottom: 24px; position: relative; }
+  .login-top .mark svg { width: 100%; height: 100%; }
+  .login-top .mark .ring { animation: spin 8s linear infinite; transform-origin: 50% 50%; }
+  .login-top h2 { font-size: 34px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .login-top p { font-size: 16px; color: var(--text-dim); margin: 0; }
+  .login-bottom { width: 100%; max-width: 400px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  #login input {
+    width: 100%; padding: 18px; font-size: 17px; font-family: var(--font);
+    border-radius: 14px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); text-align: center;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  #login input:focus { outline: none; border-color: var(--accent); }
+  #err { color: var(--danger); text-align: center; font-size: 13px; height: 16px; }
+
+  #app { display: none; flex-direction: column; height: 100%; animation: fadein 0.5s ease-out; }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    z-index: 10;
+  }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  header h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+  header button { padding: 8px 16px; font-size: 13px; border-radius: 20px; }
+
+  #stage {
+    position: relative; background: #000; aspect-ratio: 16/10;
+    margin: 16px; border-radius: 16px; overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    flex-shrink: 0;
+  }
+  #screen { width: 100%; height: 100%; object-fit: contain; }
+  #novid { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-dim); }
+
+  #mouse-pad {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 16px 16px; padding: 20px;
+    background: var(--surface); border-radius: 20px; border: 1px solid var(--border);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    flex-shrink: 0;
+  }
+  .dpad {
+    display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 6px;
+  }
+  .dbtn {
+    background: var(--surface-solid); border: 1px solid var(--border); border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text); font-size: 20px; cursor: pointer; transition: 0.1s;
+    user-select: none; -webkit-user-select: none;
+  }
+  .dbtn:active { background: var(--accent); transform: scale(0.92); }
+  .dbtn.up { grid-column: 2; grid-row: 1; }
+  .dbtn.left { grid-column: 1; grid-row: 2; }
+  .dbtn.down { grid-column: 2; grid-row: 3; }
+  .dbtn.right { grid-column: 3; grid-row: 2; }
+  
+  .click-pad {
+    display: flex; flex-direction: column; gap: 12px; align-items: stretch; flex: 1; margin-left: 24px;
+  }
+  .click-btn {
+    background: var(--surface-solid); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px; font-weight: 500; text-align: center; color: var(--text);
+    user-select: none; -webkit-user-select: none;
+  }
+  .click-btn:active { background: var(--accent); transform: scale(0.96); }
+
+  #feed-wrap { flex: 1; overflow-y: auto; padding: 0 16px; position: relative; }
+  ol { list-style: none; margin: 0; padding: 0 0 20px; }
+  li {
+    padding: 12px 16px; margin-bottom: 8px; border-radius: 14px;
+    background: rgba(255,255,255,0.05); border: 1px solid transparent;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  li.user { background: rgba(10, 132, 255, 0.1); border-color: rgba(10, 132, 255, 0.2); }
+  li.stop { border-color: rgba(255, 69, 58, 0.3); }
+  li span { color: var(--text-dim); font-size: 14px; }
+  li.user span { color: var(--text); }
+  time { color: var(--text-dim); font-size: 11px; align-self: flex-end; }
+  #empty { text-align: center; color: var(--text-dim); font-size: 13px; margin-top: 40px; }
+
+  #cmdform {
+    padding: 12px 16px 24px;
+    background: rgba(28, 28, 30, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+  #cmd {
+    flex: 1; padding: 14px 18px; font-size: 15px; font-family: var(--font);
+    border-radius: 20px; border: 1px solid var(--border);
+    background: #000; color: var(--text);
+  }
+  #cmd:focus { outline: none; border-color: var(--accent); }
+  #cmdform button { flex: none; border-radius: 20px; padding: 14px 22px; }
+
+  #confirm {
+    display: none; position: absolute; bottom: 90px; left: 16px; right: 16px; z-index: 20;
+    padding: 20px; border-radius: 16px; background: rgba(44, 44, 46, 0.95);
+    backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+    border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  #confirm p { margin: 0 0 16px; font-weight: 500; font-size: 15px; }
+  .row { display: flex; gap: 12px; }
+  .row button { flex: 1; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="login-top">
+    <div class="mark">
+      <svg viewBox="0 0 60 60" fill="none">
+        <circle cx="30" cy="30" r="28" style="stroke:rgba(255,255,255,0.15)" stroke-width="1.5"/>
+        <g class="ring"><circle cx="30" cy="30" r="22" style="stroke:var(--accent)" stroke-width="2" stroke-dasharray="1.5 8" opacity="0.8"/></g>
+        <circle cx="30" cy="30" r="13" style="stroke:var(--accent)" stroke-width="1.5" opacity="0.6"/>
+        <circle cx="30" cy="30" r="4.5" style="fill:var(--text)"/>
+      </svg>
+    </div>
+    <h2>Echo</h2>
+    <p>Remote Access</p>
+  </div>
+  <div class="login-bottom">
+    <div id="err"></div>
+    <input id="pw" type="password" placeholder="Enter Password" autocomplete="current-password" enterkeyhint="go">
+    <button id="signin">Log In</button>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="header-left">
+      <span id="dot"></span>
+      <h1>Echo</h1>
+    </div>
+    <button id="talk" class="secondary">Hold to Talk</button>
+  </header>
+
+  <div id="stage">
+    <video id="screen" autoplay playsinline muted></video>
+    <div id="novid">Connecting to screen...</div>
+  </div>
+  <audio id="macaudio" autoplay></audio>
+
+  <div id="mouse-pad">
+    <div class="dpad">
+      <div class="dbtn up" onmousedown="m('up')" ontouchstart="m('up')">↑</div>
+      <div class="dbtn left" onmousedown="m('left')" ontouchstart="m('left')">←</div>
+      <div class="dbtn down" onmousedown="m('down')" ontouchstart="m('down')">↓</div>
+      <div class="dbtn right" onmousedown="m('right')" ontouchstart="m('right')">→</div>
+    </div>
+    <div class="click-pad">
+      <div class="click-btn" onmousedown="m('click')" ontouchstart="m('click')">Left Click</div>
+      <div class="click-btn" onmousedown="m('rclick')" ontouchstart="m('rclick')">Right Click</div>
+      <button id="stop" class="danger" style="margin-top: 4px;">STOP</button>
+    </div>
+  </div>
+
+  <div id="confirm">
+    <p id="ctext"></p>
+    <div class="row">
+      <button id="deny" class="secondary">Deny</button>
+      <button id="approve">Approve</button>
+    </div>
+  </div>
+
+  <div id="feed-wrap">
+    <ol id="feed"></ol>
+    <div id="empty">No activity yet.</div>
+  </div>
+
+  <form id="cmdform">
+    <input id="cmd" placeholder="Message Echo..." enterkeyhint="send">
+    <button type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+(function(){
+  var T = ${tokStr};
+  var sess = localStorage.getItem('js_sess') || '';
+  var q = function(id){ return document.getElementById(id); };
+  var u = function(path){ return path + (path.indexOf('?')<0?'?':'&') + 't=' + T + (sess ? '&s=' + sess : ''); };
+  var time = function(ms){ return new Date(ms).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); };
+
+  window.m = function(action) {
+    fetch(u('/mouse'), { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({action:action}) }).catch(function(){});
+  };
+
+  q('signin').onclick = signin;
+  q('pw').addEventListener('keydown', function(e){ if(e.key==='Enter') signin(); });
+  function signin(){
+    var pw = q('pw').value;
+    q('err').textContent = '';
+    fetch(u('/login'), { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({password:pw}) })
+      .then(function(r){ if(r.ok) return r.json(); throw r.status; })
+      .then(function(d){
+        sess = d.s || '';
+        localStorage.setItem('js_sess', sess);
+        q('login').style.display='none';
+        q('app').style.display='flex';
+        start();
+      })
+      .catch(function(s){ q('err').textContent = s===401 ? 'Wrong password.' : 'Could not sign in.'; });
+  }
+
+  var feed, empty, next=0, pc=null, micTrack=null, connected=false;
+  function start(){
+    feed = q('feed'); empty = q('empty');
+    q('stop').onclick = function(e){ e.preventDefault(); fetch(u('/stop'), {method:'POST'}).catch(function(){}); };
+    q('cmdform').onsubmit = function(e){ e.preventDefault(); sendCommand(); };
+    setupTalk();
+    connectRTC();
+    pollEvents();
+    setInterval(pollEvents, 1500);
+    pollConfirm();
+    setInterval(pollConfirm, 1200);
+  }
+
+  function sendCommand(){
+    var box = q('cmd');
+    var text = box.value.trim();
+    if(!text) return;
+    box.value='';
+    fetch(u('/command'), { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({text:text, via:'typed'}) }).catch(function(){});
+  }
+
+  function setupTalk(){
+    var btn = q('talk');
+    if (!btn) return;
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognition = SR ? new SR() : null;
+    var finalTranscript = '';
+    if (recognition) {
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = function(event) {
+        finalTranscript = '';
+        for (var i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+        }
+      };
+      recognition.onend = function() {
+        if (finalTranscript.trim()) {
+          var text = finalTranscript.trim();
+          fetch(u('/command'), { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({text:text, via:'voice'}) }).catch(function(){});
+        }
+        finalTranscript = '';
+      };
+    }
+    var audioCtx = null, mediaStream = null, scriptNode = null, pcmData = [];
+    var press = function(on){
+      if (recognition) {
+        if (on) { finalTranscript = ''; try { recognition.start(); } catch(e){} }
+        else { try { recognition.stop(); } catch(e){} }
+      } else {
+        if(on) {
+          navigator.mediaDevices.getUserMedia({ audio:true, video:false }).then(function(stream){
+            mediaStream = stream;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            var source = audioCtx.createMediaStreamSource(stream);
+            scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
+            scriptNode.onaudioprocess = function(e){ pcmData.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+            source.connect(scriptNode);
+            scriptNode.connect(audioCtx.destination);
+          }).catch(function(){});
+        } else if (scriptNode) {
+          scriptNode.disconnect();
+          mediaStream.getTracks().forEach(function(t){ t.stop(); });
+          var length = 0;
+          for (var p=0; p<pcmData.length; p++) length += pcmData[p].length;
+          var wavBuffer = new Int16Array(length);
+          var offset = 0;
+          for (var p=0; p<pcmData.length; p++) {
+            for (var i = 0; i < pcmData[p].length; i++) {
+              var s = Math.max(-1, Math.min(1, pcmData[p][i]));
+              wavBuffer[offset++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+          }
+          pcmData = [];
+          var buffer = new ArrayBuffer(44 + wavBuffer.length * 2);
+          var view = new DataView(buffer);
+          var ws = function(v, o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+          ws(view, 0, 'RIFF'); view.setUint32(4, 36 + wavBuffer.length * 2, true); ws(view, 8, 'WAVE');
+          ws(view, 12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+          view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+          ws(view, 36, 'data'); view.setUint32(40, wavBuffer.length * 2, true);
+          var dataOffset = 44;
+          for (var i = 0; i < wavBuffer.length; i++, dataOffset+=2) view.setInt16(dataOffset, wavBuffer[i], true);
+          fetch(u('/voice'), { method: "POST", body: buffer }).catch(function(){});
+          scriptNode = null;
+        }
+      }
+      btn.style.opacity = on ? '0.6' : '1';
+      btn.textContent = on ? (recognition ? 'Listening…' : 'Recording…') : 'Hold to Talk';
+    };
+    btn.addEventListener('touchstart', function(e){ e.preventDefault(); press(true); }, {passive:false});
+    btn.addEventListener('touchend', function(e){ e.preventDefault(); press(false); }, {passive:false});
+    btn.addEventListener('mousedown', function(){ press(true); });
+    btn.addEventListener('mouseup', function(){ press(false); });
+    btn.addEventListener('mouseleave', function(){ press(false); });
+  }
+
+  function connectRTC(){
+    pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    pc.ontrack = function(ev){
+      var stream = ev.streams[0];
+      if(ev.track.kind === 'video'){ q('screen').srcObject = stream; q('novid').style.display='none'; }
+      else { q('macaudio').srcObject = stream; }
+    };
+    pc.onicecandidate = function(ev){
+      if(ev.candidate){ fetch(u('/rtc/ice'), {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({candidate:ev.candidate})}).catch(function(){}); }
+    };
+    pc.onconnectionstatechange = function(){
+      connected = pc.connectionState === 'connected';
+      if(pc.connectionState === 'failed'){ setTimeout(connectRTC, 2000); }
+    };
+    pc.addTransceiver('audio', {direction:'recvonly'});
+    pc.addTransceiver('video', {direction:'recvonly'});
+    negotiate();
+  }
+
+  function negotiate(){
+    pc.createOffer().then(function(offer){ return pc.setLocalDescription(offer); }).then(function(){
+      return fetch(u('/rtc/offer'), {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sdp:{type:pc.localDescription.type, sdp:pc.localDescription.sdp}})});
+    }).then(function(){ pollAnswer(); }).catch(function(){});
+  }
+
+  var answered = false;
+  function pollAnswer(){
+    if (answered) return;
+    fetch(u('/rtc/answer')).then(function(r){ return r.json(); }).then(function(d){
+      if(d.sdp){ answered = true; pc.setRemoteDescription(d.sdp); }
+      else { setTimeout(pollAnswer, 1000); }
+    }).catch(function(){ setTimeout(pollAnswer, 1000); });
+  }
+
+  function pollEvents(){
+    fetch(u('/events?since='+next)).then(function(r){ return r.json(); }).then(function(list){
+      list.forEach(function(ev){
+        next = Math.max(next, ev.seq+1);
+        if(ev.id === 'jarvis.status' && ev.payload === 'waiting') return;
+        var li = document.createElement('li');
+        var isUser = String(ev.payload || '').indexOf('You (phone)') === 0;
+        li.className = (ev.id === 'jarvis.error' ? 'stop' : (ev.id === 'jarvis.status' ? (ev.payload === 'acting' ? 'go' : '') : (isUser ? 'user' : '')));
+        li.innerHTML = '<span>'+escape(String(ev.payload || ev.id))+'</span><time>'+time(ev.at)+'</time>';
+        feed.appendChild(li);
+        empty.style.display='none';
+        q('feed-wrap').scrollTop = feed.scrollHeight;
+      });
+    }).catch(function(){});
+  }
+
+  function pollConfirm(){
+    fetch(u('/confirm')).then(function(r){ return r.json(); }).then(function(c){
+      var box = q('confirm');
+      if (!c.id) { box.style.display='none'; return; }
+      box.style.display='block';
+      q('ctext').textContent = c.prompt;
+      var act = function(ok){ fetch(u('/confirm'), {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({id:c.id, ok:ok})}).then(function(){ box.style.display='none'; }).catch(function(){}); };
+      q('approve').onclick = function(){ act(true); };
+      q('deny').onclick = function(){ act(false); };
+    }).catch(function(){});
+  }
+
+  function escape(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+})();
+</script>
+</body>
+</html>`;
+};

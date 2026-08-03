@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Echo capture</title></head>
+<body>
+<!--
+  The Mac's side of the phone-remote WebRTC link. This window is never shown —
+  it exists only to capture the screen (and, optionally, the microphone) and
+  answer the phone's WebRTC offer with those tracks.
+
+  It runs with node integration because it loads only this local, trusted file
+  and needs both ipcRenderer (to reach the signalling relay in the main process)
+  and the WebRTC APIs. No remote content is ever loaded here.
+-->
+<script>
+const { ipcRenderer } = require("electron");
+
+let pc = null;
+let screenStream = null;
+let micStream = null;
+let pendingIce = [];
+
+/** Tear down any existing peer, so a phone reconnecting starts clean. */
+function reset() {
+  try { pc && pc.close(); } catch (e) {}
+  pc = null;
+  pendingIce = [];
+}
+
+/**
+ * Answer the phone's offer.
+ *
+ * The phone is always the offerer; the Mac answers with a screen video track
+ * (and its microphone, so the phone can hear the room). The phone's own audio
+ * arrives here and is played out the Mac's speakers — a walkie-talkie back to
+ * whoever is at the desk.
+ */
+async function setupPC() {
+  if (pc) return;
+  pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) ipcRenderer.send("rtc-ice", ev.candidate.toJSON());
+  };
+  pc.onconnectionstatechange = () => {
+    ipcRenderer.send("rtc-state", pc ? pc.connectionState : "closed");
+  };
+  // Whatever the phone sends (your voice) comes out the Mac speakers.
+  pc.ontrack = (ev) => {
+    if (ev.track.kind === "audio") {
+      const a = new Audio();
+      a.srcObject = ev.streams[0];
+      a.play().catch(() => {});
+    }
+  };
+
+  // Capture the screen. getDisplayMedia is routed by the main process's
+  // display-media handler to the primary screen, so no picker appears.
+  try {
+    ipcRenderer.send("rtc-error", "debug: requesting screen...");
+    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    ipcRenderer.send("rtc-error", "debug: screen granted");
+    for (const track of screenStream.getVideoTracks()) pc.addTrack(track, screenStream);
+  } catch (e) {
+    ipcRenderer.send("rtc-error", "screen capture failed: " + (e && e.message ? e.message : e));
+  }
+
+  // Capture the microphone so the phone can hear the Mac's speakers / room
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    for (const track of micStream.getAudioTracks()) pc.addTrack(track, screenStream);
+  } catch (e) {
+    ipcRenderer.send("rtc-error", "mic capture failed: " + (e && e.message ? e.message : e));
+  }
+}
+
+async function onOffer(offer) {
+  try {
+    await setupPC();
+    ipcRenderer.send("rtc-error", "debug: setting remote description");
+    await pc.setRemoteDescription(offer);
+  } catch (e) {
+    // If it fails, it's likely a new session from a page reload.
+    ipcRenderer.send("rtc-error", "debug: renegotiation failed, resetting PC");
+    reset();
+    await setupPC();
+    await pc.setRemoteDescription(offer);
+  }
+
+  ipcRenderer.send("rtc-error", "debug: creating answer");
+  const answer = await pc.createAnswer();
+  ipcRenderer.send("rtc-error", "debug: setting local description");
+  await pc.setLocalDescription(answer);
+  ipcRenderer.send("rtc-error", "debug: sending rtc-answer");
+  ipcRenderer.send("rtc-answer", { type: answer.type, sdp: answer.sdp });
+  
+  // Drain any ICE candidates that arrived while we were setting up
+  for (const c of pendingIce) pc.addIceCandidate(c).catch(() => {});
+  pendingIce = [];
+}
+
+ipcRenderer.on("rtc-offer", (_e, offer) => { onOffer(offer).catch((err) => ipcRenderer.send("rtc-error", String(err))); });
+ipcRenderer.on("rtc-remote-ice", (_e, candidates) => {
+  for (const c of candidates) {
+    if (pc && pc.remoteDescription) {
+      pc.addIceCandidate(c).catch(() => {});
+    } else {
+      pendingIce.push(c);
+    }
+  }
+});
+ipcRenderer.on("rtc-close", () => reset());
+</script>
+</body>
+</html>

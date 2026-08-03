@@ -1,0 +1,14 @@
+.env
+config.json
+node_modules/
+dist/
+venv_tts/
+venv_vision/
+.DS_Store
+long_term_memory.json
+audio_log.txt
+test.wav
+rewind.jsonl.bak
+models/
+deepak_voice_source/
+rewind/

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+    <title>J.A.R.V.I.S — Setup</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="mark" aria-hidden="true"><span></span></div>
+      <div>
+        <h1>API keys</h1>
+        <p class="sub">Paste the keys you have. Every one is optional — Jarvis
+          tells you what still works without them.</p>
+      </div>
+    </header>
+
+    <!-- Fields are built from the same list the app reads, so the two can't drift. -->
+    <form id="keys" autocomplete="off"></form>
+
+    <footer>
+      <p class="where">Saved to <code id="path">~/.jarvis/keys.env</code>, readable only by you.</p>
+      <div class="actions">
+        <span id="status" role="status" aria-live="polite"></span>
+        <button type="button" id="close" class="ghost">Close</button>
+        <button type="button" id="save" class="primary">Save &amp; close</button>
+      </div>
+    </footer>
+
+    <script src="setup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+# Pin nothing here on purpose: the right versions depend on your CUDA/MPS setup
+# and on which base model you choose. Install, then run train_lora.py --dry-run
+# before committing to a paid GPU hour.
+torch
+transformers
+datasets
+accelerate
+peft
+trl
+bitsandbytes    # CUDA only; on Apple silicon use mlx-vlm instead
+pillow

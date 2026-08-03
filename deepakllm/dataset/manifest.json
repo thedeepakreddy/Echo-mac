@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-07-27T03:49:21.592Z",
+  "examples": 829,
+  "screenshots": 213,
+  "droppedScreenshots": 0,
+  "dropped": {
+    "unlabelled": 14,
+    "failed": 122,
+    "student": 0,
+    "refused": 15
+  },
+  "sourceCounts": {
+    "gemini": 975,
+    "claude": 1,
+    "ollama": 4
+  },
+  "imagePaths": "relative to this folder",
+  "note": "Snapshot of ~/.jarvis/trajectories. Safe to copy anywhere."
+}
