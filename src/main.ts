@@ -687,6 +687,19 @@ function drainHeldSpeech() {
 
 function wireTts() {
   console.log("[jarvis] starting TTS with engine:", cfg.voice.ttsEngine);
+  // A misconfigured ElevenLabs setup falls back to `say` on every utterance,
+  // which sounds exactly like never having configured it at all. The reason is
+  // knowable here and nowhere later, so it is stated once at startup rather
+  // than left to be inferred from an unchanged voice.
+  if (cfg.voice.ttsEngine === "elevenlabs") {
+    if (!cfg.voice.elevenLabsVoiceId) {
+      console.warn("[jarvis] ttsEngine is elevenlabs but voice.elevenLabsVoiceId is unset — speaking in the built-in voice");
+    } else if (!process.env.ELEVENLABS_API_KEY) {
+      console.warn("[jarvis] ttsEngine is elevenlabs but ELEVENLABS_API_KEY is unset — speaking in the built-in voice");
+    } else {
+      console.log(`[jarvis] elevenlabs voice ${cfg.voice.elevenLabsVoiceId} ready`);
+    }
+  }
   tts = new Tts(cfg.voice.ttsVoice, cfg.voice.ttsEnabled, cfg.voice.ttsEngine, cfg.voice.elevenLabsVoiceId, (speaking) => {
     // Pause the mic while Jarvis speaks so it doesn't transcribe its own voice.
     listener?.setPaused(speaking);
