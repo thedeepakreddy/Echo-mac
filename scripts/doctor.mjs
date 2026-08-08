@@ -7,22 +7,26 @@
  *   node scripts/doctor.mjs
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve, isAbsolute } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
-// Load .env exactly like the app does, so this tests the real credentials.
-for (const raw of existsSync(join(ROOT, ".env"))
-  ? readFileSync(join(ROOT, ".env"), "utf8").split("\n")
-  : []) {
-  const line = raw.trim();
-  if (!line || line.startsWith("#")) continue;
-  const eq = line.indexOf("=");
-  if (eq < 1) continue;
-  const k = line.slice(0, eq).trim();
-  let v = line.slice(eq + 1).trim();
-  if (v.length >= 2 && /^(".*"|'.*')$/.test(v)) v = v.slice(1, -1);
-  if (v && process.env[k] === undefined) process.env[k] = v;
+// Load credentials exactly like the app does, so this tests the real ones.
+// main.ts applies ~/.jarvis/keys.env before the repo's .env, and an installed
+// app has no repo .env at all — checking only one of the two would report a key
+// as missing while Jarvis was reading it fine from the other.
+for (const file of [join(homedir(), ".jarvis", "keys.env"), join(ROOT, ".env")]) {
+  for (const raw of existsSync(file) ? readFileSync(file, "utf8").split("\n") : []) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq < 1) continue;
+    const k = line.slice(0, eq).trim();
+    let v = line.slice(eq + 1).trim();
+    if (v.length >= 2 && /^(".*"|'.*')$/.test(v)) v = v.slice(1, -1);
+    if (v && process.env[k] === undefined) process.env[k] = v;
+  }
 }
 const g = (s) => `\x1b[32m${s}\x1b[0m`;
 const r = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -120,6 +124,29 @@ if (brain === "gemini") {
   } else {
     console.log(`  ${WARN} Claude check inconclusive ${dim(`— ${String(verdict).slice(0, 120)}`)}`);
   }
+}
+
+// --- voice ----------------------------------------------------------------
+// A missing ElevenLabs key is not an error at runtime — speech quietly falls
+// back to `say`. That is the right behaviour and the wrong thing to discover by
+// wondering why the voice never changed, so it is reported here.
+const ttsEngine = c?.voice?.ttsEngine ?? "mac";
+console.log(`\n${bold("Voice")} ${dim(`(${ttsEngine})`)}`);
+
+if (ttsEngine === "elevenlabs") {
+  const voiceId = c?.voice?.elevenLabsVoiceId;
+  if (voiceId) console.log(`  ${OK} voice ID ${dim(voiceId)}`);
+  else {
+    console.log(`  ${BAD} no voice.elevenLabsVoiceId in config`);
+    problems.push("set voice.elevenLabsVoiceId in config.json");
+  }
+  if (process.env.ELEVENLABS_API_KEY) console.log(`  ${OK} ELEVENLABS_API_KEY is set`);
+  else {
+    console.log(`  ${BAD} ELEVENLABS_API_KEY is not set ${dim("— speech falls back to the macOS voice")}`);
+    problems.push("add ELEVENLABS_API_KEY to ~/.jarvis/keys.env or .env, then restart");
+  }
+} else {
+  console.log(`  ${OK} built-in macOS voice ${dim(`(${c?.voice?.ttsVoice ?? "Daniel"})`)}`);
 }
 
 // --- verdict --------------------------------------------------------------

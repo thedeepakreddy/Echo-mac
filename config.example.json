@@ -20,6 +20,8 @@
     "sensitivity": 0.6,
     "wakeSound": "assets/wake.wav",
     "wakeSoundSeconds": 0,
+    "ttsEngine": "elevenlabs",
+    "elevenLabsVoiceId": "UgBBYS2sOqTuMpoF3BR0",
     "ttsVoice": "Daniel",
     "ttsEnabled": true,
     "sttModel": "models/ggml-base.en.bin",
