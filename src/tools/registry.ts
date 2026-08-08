@@ -1299,6 +1299,48 @@ TOOLS.push(
     },
   },
   {
+    name: "set_voice_engine",
+    description: "Switch which engine speaks: the built-in macOS voice or an ElevenLabs voice. Use when asked to sound more natural, to use an ElevenLabs voice, or to go back to the local voice.",
+    schema: {
+      engine: z.enum(["mac", "elevenlabs"]).describe("Which speech engine should speak."),
+      voiceId: z.string().optional().describe("An ElevenLabs voice ID, when switching to a different one."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const configPath = join(getAppPath(), "config.json");
+      // A fresh install has only config.example.json, and loadConfig falls back
+      // to it. Writing config.json seeded from that example keeps every other
+      // setting intact instead of starting the user from bare defaults.
+      let config: any = {};
+      if (existsSync(configPath)) {
+        config = JSON.parse(readFileSync(configPath, "utf8"));
+      } else {
+        const examplePath = join(getAppPath(), "config.example.json");
+        if (existsSync(examplePath)) config = JSON.parse(readFileSync(examplePath, "utf8"));
+      }
+      config.voice = config.voice || {};
+      config.voice.ttsEngine = a.engine;
+      if (a.voiceId) config.voice.elevenLabsVoiceId = a.voiceId;
+      writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+
+      if (a.engine === "mac") {
+        return { text: `Switching back to the built-in ${config.voice.ttsVoice ?? "macOS"} voice on the next restart.` };
+      }
+      const voiceId = config.voice.elevenLabsVoiceId;
+      if (!voiceId) {
+        return { text: "I set the engine to ElevenLabs, but there's no voice ID to speak with — give me one and I'll save it." };
+      }
+      // Without the key the speech path silently falls through to `say`, so say
+      // so now rather than letting the user wonder why nothing changed.
+      if (!process.env.ELEVENLABS_API_KEY) {
+        return {
+          text: `Saved ElevenLabs voice ${voiceId}, but ELEVENLABS_API_KEY isn't set — until it is, I'll keep speaking in the built-in voice. Add it to .env and restart me.`,
+        };
+      }
+      return { text: `I'll speak with ElevenLabs voice ${voiceId} from the next restart.` };
+    },
+  },
+  {
     name: "send_sms_message",
     description: "Send a text message or iMessage entirely offline via the Mac's Continuity/Messages app.",
     schema: {
