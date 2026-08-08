@@ -1,8 +1,53 @@
 import { spawn, ChildProcess } from "node:child_process";
 import { withProsody } from "./prosody.js";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/**
+ * Split a reply into pieces that can be fetched and played independently.
+ *
+ * The first piece is deliberately one sentence. Time to the first spoken word
+ * is the whole point, and one sentence comes back from a TTS API far sooner
+ * than a paragraph; the rest is fetched while it plays. Later pieces are larger
+ * because their latency is hidden behind playback, and fewer, longer requests
+ * keep the delivery continuous instead of chopping it into fragments.
+ *
+ * The first target is a floor rather than a ceiling: a four-character "Yes?"
+ * is not worth a request of its own, so a very short opener absorbs the
+ * sentence after it.
+ *
+ * Sentences are never split. A seam mid-sentence is audible in a way that a
+ * seam between sentences is not, which costs more than the latency it saves.
+ */
+export function chunkForSpeech(text: string, firstTarget = 25, restTarget = 240): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g);
+  if (!sentences) return text.trim() ? [text.trim()] : [];
+
+  const chunks: string[] = [];
+  let buf = "";
+  for (const sentence of sentences) {
+    const s = sentence.trim();
+    if (!s) continue;
+    buf = buf ? `${buf} ${s}` : s;
+    if (buf.length >= (chunks.length === 0 ? firstTarget : restTarget)) {
+      chunks.push(buf);
+      buf = "";
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+/** Drop a temp audio file. It has been played, or will never be. */
+function discard(path: string | null): void {
+  if (!path) return;
+  try {
+    unlinkSync(path);
+  } catch {
+    /* a leftover file in tmp is not worth failing a reply over */
+  }
+}
 
 /**
  * Speaks text aloud via the macOS `say` command or API (FakeYou / ElevenLabs).
@@ -37,7 +82,15 @@ export class Tts {
       return null;
     }
     try {
-      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${this.elevenLabsVoiceId}`, {
+      // The /stream endpoint sends audio as it is generated rather than after,
+      // so the file is complete sooner even though afplay still needs all of it.
+      // optimize_streaming_latency trades a little pronunciation care for a
+      // faster first byte, and 22kHz/32kbps is a fraction of the default payload
+      // while being indistinguishable through a laptop speaker.
+      const url =
+        `https://api.elevenlabs.io/v1/text-to-speech/${this.elevenLabsVoiceId}/stream` +
+        `?optimize_streaming_latency=3&output_format=mp3_22050_32`;
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           "xi-api-key": process.env.ELEVENLABS_API_KEY,
@@ -125,6 +178,69 @@ export class Tts {
     }
   }
 
+  /** Run one player to completion. Never let two utterances overlap: anything
+   * still playing is stale by definition — one voice at a time is the whole
+   * contract of this class. */
+  private async play(bin: string, args: string[]): Promise<void> {
+    if (this.current) {
+      this.current.kill("SIGTERM");
+      this.current = null;
+    }
+    const proc = spawn(bin, args);
+    this.current = proc;
+    await new Promise<void>((resolve) => {
+      proc.on("exit", () => resolve());
+      proc.on("error", () => resolve());
+    });
+    // Clear the handle only if it is still ours. Between this process exiting
+    // and this line running, stop() and a fresh say() can have put a newer
+    // player there — nulling that one would leave it playing and unkillable,
+    // which is the exact failure this class exists to prevent.
+    if (this.current === proc) this.current = null;
+  }
+
+  /** Speak locally. Gives the line a delivery rather than reading it flat:
+   * pitch, expressiveness, pace and real pauses chosen from what it says. */
+  private playSay(text: string): Promise<void> {
+    return this.play("/usr/bin/say", ["-v", this.voice, withProsody(text)]);
+  }
+
+  /**
+   * Speak a reply through ElevenLabs, fetching the next sentence while the
+   * current one plays. Only the first chunk's latency is ever heard; everything
+   * after it is already on disk by the time the previous chunk finishes.
+   */
+  private async speakElevenLabs(text: string, generation: number): Promise<void> {
+    const chunks = chunkForSpeech(text);
+    if (!chunks.length) return;
+    console.log(`[jarvis] fetching elevenlabs voice for: "${text.slice(0, 30)}..." (${chunks.length} part${chunks.length > 1 ? "s" : ""})`);
+
+    let pending = this.fetchElevenLabs(chunks[0]);
+    for (let i = 0; i < chunks.length; i++) {
+      const audioPath = await pending;
+      // Start the next fetch before playing this one — that overlap is the
+      // entire optimisation.
+      pending = i + 1 < chunks.length ? this.fetchElevenLabs(chunks[i + 1]) : Promise.resolve(null);
+
+      // stop() ran while audio was in flight. Drop what arrived and whatever is
+      // still coming, so an interrupted reply leaves nothing behind.
+      if (generation !== this.generation) {
+        discard(audioPath);
+        void pending.then(discard, () => {});
+        return;
+      }
+
+      if (audioPath) {
+        await this.play("/usr/bin/afplay", [audioPath]);
+        discard(audioPath);
+      } else {
+        // One failed chunk must not swallow the sentence. Speaking it locally
+        // keeps the reply intact instead of going silent partway through.
+        await this.playSay(chunks[i]);
+      }
+    }
+  }
+
   private async drain() {
     const generation = ++this.generation;
     this.speaking = true;
@@ -132,40 +248,34 @@ export class Tts {
 
     while (this.queue.length && generation === this.generation) {
       const text = this.queue.shift()!;
-      
+
+      if (this.engine === "elevenlabs") {
+        await this.speakElevenLabs(text, generation);
+        if (generation !== this.generation) break;
+        continue;
+      }
+
       let audioPath: string | null = null;
       if (this.engine === "fakeyou") {
         console.log(`[jarvis] fetching fakeyou voice for: "${text.slice(0, 30)}..."`);
         audioPath = await this.fetchFakeYou(text);
-      } else if (this.engine === "elevenlabs") {
-        console.log(`[jarvis] fetching elevenlabs voice for: "${text.slice(0, 30)}..."`);
-        audioPath = await this.fetchElevenLabs(text);
       } else if (this.engine === "local-clone") {
         console.log(`[jarvis] running local open-source clone for: "${text.slice(0, 30)}..."`);
         audioPath = await this.fetchLocalClone(text);
       }
 
       // If stop() was called while downloading audio, don't play it.
-      if (generation !== this.generation) break;
+      if (generation !== this.generation) {
+        discard(audioPath);
+        break;
+      }
 
-      await new Promise<void>((resolve) => {
-        // Never let two utterances overlap. Anything still playing is stale by
-        // definition — one voice at a time is the whole contract of this class.
-        if (this.current) {
-          this.current.kill("SIGTERM");
-          this.current = null;
-        }
-        if ((this.engine === "fakeyou" || this.engine === "elevenlabs" || this.engine === "local-clone") && audioPath) {
-          this.current = spawn("/usr/bin/afplay", [audioPath]);
-        } else {
-          // Give the line a delivery rather than reading it flat: pitch,
-          // expressiveness, pace and real pauses chosen from what it says.
-          this.current = spawn("/usr/bin/say", ["-v", this.voice, withProsody(text)]);
-        }
-        this.current.on("exit", () => resolve());
-        this.current.on("error", () => resolve());
-      });
-      this.current = null;
+      if (audioPath) {
+        await this.play("/usr/bin/afplay", [audioPath]);
+        discard(audioPath);
+      } else {
+        await this.playSay(text);
+      }
     }
 
     // If stop() ran, it already reported that speech ended and a newer drain may
