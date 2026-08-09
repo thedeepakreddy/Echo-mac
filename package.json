@@ -13,6 +13,7 @@
     "waketest": "esbuild src/_waketest.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist/_waketest.js --log-level=error && node dist/_waketest.js",
     "miccheck": "esbuild src/_miccheck.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist/_miccheck.js --log-level=error && node dist/_miccheck.js",
     "e2e": "esbuild src/_e2e.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist/_e2e.js --log-level=error && node dist/_e2e.js",
+    "hudpreview": "node scripts/preview_hud.mjs",
     "permissions": "node scripts/permissions.mjs",
     "login": "node scripts/login.mjs",
     "doctor": "npm run permissions && node scripts/doctor.mjs",
