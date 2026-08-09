@@ -322,17 +322,44 @@ body[data-status="error"] .gear {
   transition: transform 90ms ease-out, box-shadow 220ms ease;
   animation: core-flicker 3.2s ease-in-out infinite;
 }
-/* The glowing triangular emblem — the lit centrepiece of the reactor. */
+/* The glowing emblem — the lit centrepiece of the reactor.
+ *
+ * Drawn as line art rather than a filled shape so the glow comes from the
+ * strokes themselves, and drawn in SVG rather than as an image so it inherits
+ * --glow (the state colour) and stays crisp at any --size. Everything is
+ * currentColor, so the one `color` below tints the whole emblem. */
 .core .triad {
   position: absolute;
-  inset: 22%;
-  background: linear-gradient(165deg, color-mix(in srgb, var(--glow) 55%, white), var(--glow));
-  clip-path: polygon(50% 6%, 93% 88%, 7% 88%);
+  left: 17%;
+  top: 17%;
+  width: 66%;
+  height: 66%;
+  overflow: visible;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--glow) 10%, white);
+  /* Two glows outward, then a tight dark halo. The core is brightest in a ring
+     around its middle, and white line art laid over that ring disappears — the
+     dark pass is what keeps the emblem legible where the plasma is hottest. */
   filter:
     drop-shadow(0 0 calc(var(--size) * 0.045) var(--glow))
-    drop-shadow(0 0 calc(var(--size) * 0.015) rgba(255, 255, 255, 0.7));
+    drop-shadow(0 0 calc(var(--size) * 0.015) rgba(255, 255, 255, 0.7))
+    drop-shadow(0 0 calc(var(--size) * 0.006) rgba(0, 18, 26, 0.95));
   animation: triad-pulse 2s ease-in-out infinite;
 }
+.core .triad g {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.core .triad .thin { stroke-width: 1.1; opacity: 0.8; }
+.core .triad .solid { fill: currentColor; stroke: none; }
+/* The sunburst sits behind the eye and must never compete with it: thin and
+   dim, so at small sizes it reads as a halo rather than as clutter. */
+.core .triad .tri-rays { stroke-width: 1; opacity: 0.6; }
+.core .triad .tri-compass { stroke-width: 1.9; }
+.core .triad .tri-compass line { stroke-width: 1; opacity: 0.85; }
 
 /* ---- 6b. electric neuron strands: inner ring -> triangle ----
  * Dashed, glowing filaments that run from the inner ring into the triangle,
