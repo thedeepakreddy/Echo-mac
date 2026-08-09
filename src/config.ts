@@ -56,6 +56,13 @@ export interface JarvisConfig {
    */
   dreaming: { enabled: boolean };
   /**
+   * Ghost mode: watch the screen history for a repetitive task and offer to
+   * automate it. Off by default — it speaks on its own schedule, unprompted,
+   * which should always be something the user asked for. Can be turned on for
+   * the session by voice without changing this.
+   */
+  ghost: { enabled: boolean };
+  /**
    * Which part of the camera's view maps to the screen, in Vision's space
    * (origin bottom-left). Narrow the band if you cannot reach the screen edges;
    * widen it if the cursor feels twitchy.
@@ -112,6 +119,7 @@ const DEFAULTS: JarvisConfig = {
   control: { cliclickBin: "/opt/homebrew/bin/cliclick", workingDir: "~" },
   hud: { startListeningOnLaunch: true },
   dreaming: { enabled: false },
+  ghost: { enabled: false },
   gestureRegion: { xMin: 0.2, xMax: 0.8, yMin: 0.35, yMax: 0.8 },
   learning: { enabled: false, captureScreens: true, maxStepsPerTurn: 60 },
   remote: { alwaysOn: false },

@@ -56,7 +56,7 @@ import {
 import { startRewind, stopRewind } from "./tools/rewind.js";
 import { upcomingEvents } from "./tools/system.js";
 import { startWatchdog, stopWatchdog } from "./tools/watchdog.js";
-import { startGhostMode, stopGhostMode } from "./tools/ghost.js";
+import { toggleGhostMode, stopGhostMode } from "./tools/ghost.js";
 import { startAutoDebug, stopAutoDebug } from "./tools/autodebug.js";
 import { embedRecentMemory } from "./tools/long_term_memory.js";
 import { isRecordingMeeting } from "./tools/meeting.js";
@@ -935,10 +935,17 @@ app.whenReady().then(async () => {
         console.log("[jarvis] Ollama not reachable — ghost, shadow and auto-debug stay off");
         return;
       }
-      startGhostMode(tts);
+      // Ghost speaks unprompted, on its own timer, so it is the one local
+      // helper that stays off until asked for — by config, or by voice for the
+      // session. The others only react to something the user did.
+      if (cfg.ghost?.enabled) {
+        toggleGhostMode(true, { host: cfg.ollama?.host, model: cfg.ollama?.model });
+      }
       startAutoDebug(tts);
       startShadowMode(tts);
-      console.log("[jarvis] local helpers on (ghost pattern-spotter, shadow pair-programmer, auto-debug)");
+      console.log(
+        `[jarvis] local helpers on (shadow pair-programmer, auto-debug${cfg.ghost?.enabled ? ", ghost pattern-spotter" : ""})`
+      );
     });
 
     // Embed memory every 5 minutes
