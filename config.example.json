@@ -37,5 +37,9 @@
 
   "hud": {
     "startListeningOnLaunch": true
+  },
+
+  "ghost": {
+    "enabled": false
   }
 }

@@ -1265,6 +1265,25 @@ TOOLS.push(
     },
   },
   {
+    name: "toggle_ghost_mode",
+    description: "Turn the ghost pattern-spotter on or off. When on, Jarvis watches the screen history for a repetitive task and occasionally offers to automate it. Off by default. Use when the user asks to watch for patterns, or asks it to stop interrupting or stop making suggestions.",
+    schema: {
+      enable: z.boolean().describe("True to watch for repetitive patterns, false to stop."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const { toggleGhostMode } = await import("./ghost.js");
+      const { loadConfig } = await import("../config.js");
+      const cfg = loadConfig(appRoot());
+      toggleGhostMode(a.enable, { host: cfg.ollama?.host, model: cfg.ollama?.model });
+      return {
+        text: a.enable
+          ? "Ghost mode is on. I'll watch for repetitive work and mention it at most once an hour."
+          : "Ghost mode is off. I won't make unprompted suggestions.",
+      };
+    },
+  },
+  {
     name: "create_jarvis_tool",
     description: "Deprecated and disabled. To give Echo a new ability, use create_skill, which safely chains tools Echo already has instead of writing and running new code.",
     schema: {
