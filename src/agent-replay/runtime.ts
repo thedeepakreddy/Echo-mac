@@ -310,12 +310,36 @@ export function recordToolDenied(name: string, args: unknown, message: string): 
   }
 }
 
+export interface RecordLLMOptions {
+  /**
+   * Whether this caller is about to try again, asked at the moment the failure
+   * surfaces and before the caller's own catch runs.
+   *
+   * `willRetry` used to be the literal `false` on every recorded error, and the
+   * replay path at the top of this function believes what the tape says. A tape
+   * from 10 September holds `llm.error ... willRetry: false` immediately followed
+   * by `llm.request attempt: 1` — the recorder said it would not retry, then
+   * retried. Recovery is the most intricate path in the runtime and the likeliest
+   * home for a silent stop, and it was the one path replay could not reproduce.
+   *
+   * A predicate rather than a value, because only the caller knows its policy,
+   * and it has to be the same expression its catch block uses — see
+   * `geminiFallbackReason`.
+   */
+  willRetry?: (error: unknown) => boolean;
+}
+
 /**
  * Capture a complete non-streaming provider exchange. Providers that stream
  * should emit llm.chunk separately; Gemini and Ollama currently return their
  * assembled response, which is still sufficient for inspection and retries.
  */
-export function recordLLM<T>(request: unknown, action: () => Promise<T>, attempt = 0): Promise<T> {
+export function recordLLM<T>(
+  request: unknown,
+  action: () => Promise<T>,
+  attempt = 0,
+  opts: RecordLLMOptions = {}
+): Promise<T> {
   const session = getReplaySession();
   if (session) {
     return Promise.resolve().then(() => {
@@ -373,8 +397,15 @@ export function recordLLM<T>(request: unknown, action: () => Promise<T>, attempt
     },
     (error) => {
       const err = error instanceof Error ? error : new Error(String(error));
+      let willRetry = false;
       try {
-        rec.emit({ type: "llm.error", reqId, message: err.message, stack: err.stack, willRetry: false });
+        willRetry = opts.willRetry?.(error) === true;
+      } catch {
+        // A fault in a caller's retry policy must not change what is recorded
+        // about the provider's failure, and must not become the failure.
+      }
+      try {
+        rec.emit({ type: "llm.error", reqId, message: err.message, stack: err.stack, willRetry });
       } catch {
         /* preserve the provider's original failure */
       }
