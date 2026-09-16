@@ -310,6 +310,42 @@ export function recordToolDenied(name: string, args: unknown, message: string): 
   }
 }
 
+/**
+ * Token counts from whatever shape the provider used.
+ *
+ * Every recorded `llm.response` carried `usage: {}` because the field was a
+ * hardcoded empty object, so no tape could be tied to a cost and the one number
+ * that shows a run heading for a context overflow was never written down.
+ *
+ * Each provider spells this differently and none of them is going to stop:
+ * Gemini nests `usageMetadata`, Ollama puts `prompt_eval_count` at the top
+ * level, OpenAI-shaped APIs use `usage.prompt_tokens`. Reading all of them here
+ * keeps that spread out of the recorder's callers.
+ */
+export function normalizeUsage(response: unknown): Record<string, number> {
+  if (!response || typeof response !== "object") return {};
+  const source = response as Record<string, any>;
+  const meta = (source.usageMetadata ?? source.usage ?? source) as Record<string, any>;
+  const pick = (...keys: string[]): number | undefined => {
+    for (const key of keys) {
+      const value = Number(meta?.[key]);
+      if (Number.isFinite(value)) return value;
+    }
+    return undefined;
+  };
+  const usage: Record<string, number> = {};
+  const input = pick("promptTokenCount", "prompt_tokens", "promptTokens", "prompt_eval_count", "input_tokens");
+  const output = pick("candidatesTokenCount", "completion_tokens", "completionTokens", "eval_count", "output_tokens");
+  const total = pick("totalTokenCount", "total_tokens", "totalTokens");
+  const cached = pick("cachedContentTokenCount", "cached_tokens", "cache_read_input_tokens");
+  if (input !== undefined) usage.inputTokens = input;
+  if (output !== undefined) usage.outputTokens = output;
+  if (total !== undefined) usage.totalTokens = total;
+  else if (input !== undefined && output !== undefined) usage.totalTokens = input + output;
+  if (cached !== undefined) usage.cachedTokens = cached;
+  return usage;
+}
+
 export interface RecordLLMOptions {
   /**
    * Whether this caller is about to try again, asked at the moment the failure
@@ -404,7 +440,7 @@ export function recordLLM<T>(
     (response) => {
       loop?.closedWork(reqId);
       try {
-        rec.emit({ type: "llm.response", reqId, stopReason: "complete", usage: {}, bodyRef: rec.blob(response) });
+        rec.emit({ type: "llm.response", reqId, stopReason: "complete", usage: normalizeUsage(response), bodyRef: rec.blob(response) });
       } catch {
         /* never turn a complete model response into a failed turn */
       }

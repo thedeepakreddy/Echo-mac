@@ -37,7 +37,8 @@ async function main() {
   const brain = new RecordingBrain(inner, "test");
   brain.send("inspect replay recording");
   const request = { model: "test", messages: ["inspect replay recording"] };
-  const recordedResponse = { message: { content: "recorded response" } };
+  // Ollama's shape: counts at the top level of the response.
+  const recordedResponse = { message: { content: "recorded response" }, prompt_eval_count: 41, eval_count: 7 };
   const firstResponse = await recordLLM(request, async () => recordedResponse);
   if (firstResponse !== recordedResponse) throw new Error("live response did not pass through");
 
@@ -48,7 +49,11 @@ async function main() {
   // silent stop, was the one path replay could not reproduce.
   const failingRequest = { model: "test", messages: ["inspect replay recording"], attempt: 0 };
   const retriedRequest = { model: "test-fallback", messages: ["inspect replay recording"], attempt: 1 };
-  const retryResponse = { message: { content: "recovered after a retry" } };
+  // Gemini's shape: counts nested under usageMetadata.
+  const retryResponse = {
+    message: { content: "recovered after a retry" },
+    usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 18, totalTokenCount: 138 },
+  };
   let failureSurfaced = false;
   try {
     await recordLLM(failingRequest, async () => { throw new Error("503 high demand"); }, 0, {
@@ -114,6 +119,32 @@ async function main() {
   if (events.find((event) => event.type === "loop.exit")?.abandoned !== 0) {
     throw new Error("a clean run reported abandoned work");
   }
+
+  // Every tape in ~/.echo/replays carried codeVersion "unknown" and usage {},
+  // so none of them could be tied to a build or to a cost, and the one number
+  // that shows a run heading for a context overflow was never written down.
+  const started = events.find((event) => event.type === "run.start");
+  if (!started?.gitSha || started.gitSha === "unknown") {
+    throw new Error("the run does not say which build produced it");
+  }
+  const responses = events.filter((event) => event.type === "llm.response");
+  if (responses.length !== 3) throw new Error(`expected three recorded responses, got ${responses.length}`);
+  const [ollamaShaped, geminiShaped, silent] = responses.map((event) => event.usage as Record<string, number>);
+  // A provider that reports nothing must still record nothing, not a guess.
+  if (Object.keys(silent ?? {}).length !== 0) throw new Error("token counts were invented for a response that had none");
+  if (ollamaShaped?.inputTokens !== 41 || ollamaShaped?.outputTokens !== 7 || ollamaShaped?.totalTokens !== 48) {
+    throw new Error(`top-level provider token counts were not recorded: ${JSON.stringify(ollamaShaped)}`);
+  }
+  if (geminiShaped?.inputTokens !== 120 || geminiShaped?.outputTokens !== 18 || geminiShaped?.totalTokens !== 138) {
+    throw new Error(`nested provider token counts were not recorded: ${JSON.stringify(geminiShaped)}`);
+  }
+  // Tool execution is the largest surface in Echo and had zero replay coverage.
+  const toolCalls = events.filter((event) => event.type === "tool.call");
+  const toolResults = events.filter((event) => event.type === "tool.result");
+  if (toolCalls.length !== 1 || toolResults.length !== 1) {
+    throw new Error(`a run that called one tool recorded ${toolCalls.length} calls and ${toolResults.length} results`);
+  }
+  if (toolResults[0].callId !== toolCalls[0].callId) throw new Error("the tool result does not name the call it answers");
   const source = new ReplaySource(loadEvents(runDir), new BlobStore(runDir));
   const replayedResponse = source.nextLLMExchange(request).response;
   if ((replayedResponse as any).message?.content !== "recorded response") throw new Error("replay did not serve the recorded model response");
