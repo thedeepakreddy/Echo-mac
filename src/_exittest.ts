@@ -385,6 +385,63 @@ console.log("\na provider that never answers ends the run once");
   if (previousTimeout === undefined) delete process.env.ECHO_LLM_TIMEOUT_MS; else process.env.ECHO_LLM_TIMEOUT_MS = previousTimeout;
 }
 
+// ---- two failures in one run are both reported ----------------------------
+//
+// `pendingError` was one slot written under two opposite rules: forward()
+// overwrote it with the newest error, the exhausted-recovery path kept the
+// first. Which one the user saw depended on execution order.
+console.log("\ntwo errors in one run both reach the user");
+{
+  const { Brain } = await import("./brain/types.js");
+  const { currentLoop } = await import("./agent-replay/loop-log.js");
+
+  class TwoFailuresBrain extends Brain {
+    send(_text: string): void {
+      queueMicrotask(() => {
+        const log = currentLoop();
+        log?.iterationStart(0, 1, 10);
+        this.emitEvent("error", "first failure: the screenshot tool timed out");
+        this.emitEvent("error", "second failure: the provider refused the request");
+        // The same failure reported twice is one fact, not a third error.
+        this.emitEvent("error", "second failure: the provider refused the request");
+        log?.exit("provider_error", { detail: "two distinct failures in one run" });
+        this.emitEvent("turnEnd");
+      });
+    }
+    interrupt(): void {}
+    async stop(): Promise<void> {}
+  }
+
+  const errorRoot = mkdtempSync(join(tmpdir(), "echo-exittest-errors-"));
+  const previousLogDir = process.env.ECHO_LOG_DIR;
+  process.env.ECHO_LOG_DIR = errorRoot;
+
+  const brain = new RecordingBrain(new TwoFailuresBrain(), "test", { model: "fake" }, {
+    identity: { id: "two-errors", name: "Echo Two Errors", kind: "clone" },
+    autoResume: false,
+  });
+  const surfaced: string[] = [];
+  brain.on("error", (message: unknown) => surfaced.push(String(message)));
+  brain.on("text", () => {});
+  const ended = new Promise<void>((resolve) => { brain.on("turnEnd", () => resolve()); setTimeout(resolve, 5000); });
+  brain.send("fail in two different ways");
+  await ended;
+
+  const reported = surfaced.join("\n");
+  check("the first failure survives to the terminal output", reported.includes("first failure"));
+  check("the most recent failure survives too", reported.includes("second failure"));
+  check("the terminal output says how many there were", /\b2 errors\b/.test(reported));
+
+  // The tape kept them separately all along; it was only the user-facing
+  // terminal that collapsed to one.
+  const tape = readFileSync(join(errorRoot, readdirSync(errorRoot)[0] ?? "", "events.jsonl"), "utf8")
+    .split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  check("both failures are in the tape as separate events",
+    tape.filter((e) => e.type === "agent.error").length >= 2);
+
+  if (previousLogDir === undefined) delete process.env.ECHO_LOG_DIR; else process.env.ECHO_LOG_DIR = previousLogDir;
+}
+
 console.log(`\n${pass}/${pass + fail} exit reasons recorded correctly`);
 if (fail) console.log("A failure here means a path out of the loop does not name itself.");
 process.exit(fail ? 1 : 0);

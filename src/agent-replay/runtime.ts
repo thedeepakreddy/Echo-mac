@@ -447,7 +447,17 @@ export class RecordingBrain extends Brain {
   private interrupted = false;
   private stopped = false;
   private recoveryTimer: NodeJS.Timeout | null = null;
-  private pendingError: string | null = null;
+  /**
+   * Every failure this run surfaced, in order.
+   *
+   * This was one slot written under two opposite rules: `forward()` overwrote
+   * it with the newest error, and the exhausted-recovery path kept whichever
+   * was already there. With more than one failure in a run, which one the user
+   * finally saw depended on the order the two paths happened to run — and a
+   * task that failed three different ways reported exactly one of them, chosen
+   * by accident.
+   */
+  private readonly pendingErrors: string[] = [];
   private finalFailureMessage: string | null = null;
   private readonly suppressedTurnEnds = new Set<string>();
   private readonly terminalRuns = new Set<string>();
@@ -563,7 +573,7 @@ export class RecordingBrain extends Brain {
       }
       // A transient provider error is not the end of the user's task anymore.
       // Hold it until recovery is exhausted; a successful retry stays quiet.
-      this.pendingError = String(args[0] ?? "Unknown brain error");
+      this.notePendingError(args[0]);
       return;
     }
 
@@ -583,16 +593,37 @@ export class RecordingBrain extends Brain {
     this.emit(event, ...args);
   }
 
+  private notePendingError(message: unknown): void {
+    const text = String(message ?? "").trim() || "Unknown brain error";
+    // A provider that reports the same failure twice is one fact, not two.
+    if (this.pendingErrors.at(-1) === text) return;
+    this.pendingErrors.push(text);
+    if (this.pendingErrors.length > 20) this.pendingErrors.splice(0, this.pendingErrors.length - 20);
+  }
+
+  /**
+   * What went wrong, as one message: the first failure, the most recent one,
+   * and how many there were. The first is usually the cause and the last is
+   * usually what the user saw, so reporting either alone loses the run.
+   */
+  private summarizePendingErrors(): string | null {
+    const count = this.pendingErrors.length;
+    if (count === 0) return null;
+    if (count === 1) return this.pendingErrors[0];
+    return `${this.pendingErrors[0]}\n\n(${count} errors in this run; most recent: ${this.pendingErrors[count - 1]})`;
+  }
+
   private emitTerminal(runId: string): void {
     if (this.terminalRuns.has(runId)) return;
     this.terminalRuns.add(runId);
     const reason = this.checkpoint?.lastExitReason;
     if (this.finalFailureMessage) this.emit("text", this.finalFailureMessage);
-    if (this.pendingError && reason !== "completed" && reason !== "abort_signal") {
-      this.emit("error", this.pendingError);
+    const failures = this.summarizePendingErrors();
+    if (failures && reason !== "completed" && reason !== "abort_signal") {
+      this.emit("error", failures);
     }
     this.finalFailureMessage = null;
-    this.pendingError = null;
+    this.pendingErrors.length = 0;
     this.emit("turnEnd");
   }
 
@@ -673,7 +704,10 @@ export class RecordingBrain extends Brain {
       ? `${checkpoint.actor.name} could not finish after ${checkpoint.recoveryAttempts} automatic recovery attempt(s). ` +
         `The checkpoint is preserved in ${context.recorder.dir}.`
       : `${checkpoint.actor.name} stopped for an unrecoverable reason (${reason}).`;
-    this.pendingError = this.pendingError ?? message;
+    // Only when the run said nothing else: this is the wrapper's own summary,
+    // and `finalFailureMessage` already speaks it. It should not displace a
+    // real provider failure, nor be appended beside it.
+    if (this.pendingErrors.length === 0) this.notePendingError(message);
     this.finalFailureMessage = message;
     queueMicrotask(() => this.emitTerminal(context.recorder.runId));
   }
@@ -744,7 +778,7 @@ export class RecordingBrain extends Brain {
       log.onStall((payload) => {
         if (log.hasExited) return;
         const waitingOn = String(payload.waitingOn ?? payload.state ?? "unknown work");
-        this.pendingError = `${task.actor.name} stalled while waiting on ${waitingOn}.`;
+        this.notePendingError(`${task.actor.name} stalled while waiting on ${waitingOn}.`);
         log.exit("stream_closed", {
           detail: `watchdog stopped a stalled run while waiting on ${waitingOn}`,
         });
