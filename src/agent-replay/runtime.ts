@@ -647,11 +647,20 @@ export class RecordingBrain extends Brain {
       if (checkpoint.recoveryAttempts === 1) {
         this.emit("text", `${checkpoint.actor.name} stopped before finishing, so I'm continuing from its checkpoint.`);
       }
+      // Deliberately NOT unref'd. The line above has already told the user the
+      // task is continuing from its checkpoint, so this timer is a promise
+      // that has been made out loud. An unref'd timer does not hold the event
+      // loop open, so whenever nothing else does — a headless run, a detached
+      // worker, a rehearsal actor — the process exits during the backoff and
+      // the promised recovery simply never happens. That is a silent stop
+      // manufactured by the recovery mechanism itself.
+      //
+      // Nothing is left dangling at quit in exchange: both `interrupt()` and
+      // `stop()` clear this timer through `cancelPendingRecovery`.
       this.recoveryTimer = setTimeout(() => {
         this.recoveryTimer = null;
         this.beginRun(recoveryPrompt(checkpoint), checkpoint);
       }, delay);
-      this.recoveryTimer.unref?.();
       return;
     }
 
