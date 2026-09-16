@@ -327,6 +327,16 @@ export interface RecordLLMOptions {
    * `geminiFallbackReason`.
    */
   willRetry?: (error: unknown) => boolean;
+
+  /**
+   * This request may be abandoned on purpose — a warm-up or a guess the loop
+   * never intends to wait for.
+   *
+   * Labelled requests are excluded from the loop's open-work ledger, so an
+   * unpaired `llm.request` in a tape always means a call that was genuinely
+   * walked away from, rather than one the design expected to discard.
+   */
+  speculative?: boolean;
 }
 
 /**
@@ -347,7 +357,7 @@ export function recordLLM<T>(
       const rec = currentRecorder();
       if (rec) {
         const bodyRef = rec.blob(request);
-        rec.emit({ type: "llm.request", reqId: String(exchange.request.reqId), attempt: Number(exchange.request.attempt ?? attempt), bodyRef, bodyHash: bodyRef });
+        rec.emit({ type: "llm.request", reqId: String(exchange.request.reqId), attempt: Number(exchange.request.attempt ?? attempt), bodyRef, bodyHash: bodyRef, speculative: exchange.request.speculative || undefined });
         if (exchange.errorEvent) {
           rec.emit({
             type: "llm.error",
@@ -378,16 +388,21 @@ export function recordLLM<T>(
   const run = () => withDeadline(action, timeoutFromEnv("ECHO_LLM_TIMEOUT_MS", DEFAULT_REQUEST_DEADLINE_MS), "model request");
   const rec = currentRecorder();
   if (!rec || !payloadRecordingEnabled()) return run();
+  const loop = currentLoop();
   let reqId: string;
   try {
     reqId = randomUUID();
     const bodyRef = rec.blob(request);
-    rec.emit({ type: "llm.request", reqId, attempt, bodyRef, bodyHash: bodyRef });
+    rec.emit({ type: "llm.request", reqId, attempt, bodyRef, bodyHash: bodyRef, speculative: opts.speculative || undefined });
+    // The loop now owes this request a terminal event. If the run ends first,
+    // `exit()` says the call was abandoned instead of leaving a silent gap.
+    if (!opts.speculative) loop?.openedWork(reqId, "llm.request", `attempt ${attempt}`);
   } catch {
     return run();
   }
   return run().then(
     (response) => {
+      loop?.closedWork(reqId);
       try {
         rec.emit({ type: "llm.response", reqId, stopReason: "complete", usage: {}, bodyRef: rec.blob(response) });
       } catch {
@@ -396,6 +411,7 @@ export function recordLLM<T>(
       return response;
     },
     (error) => {
+      loop?.closedWork(reqId);
       const err = error instanceof Error ? error : new Error(String(error));
       let willRetry = false;
       try {

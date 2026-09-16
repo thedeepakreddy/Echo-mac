@@ -99,6 +99,21 @@ async function main() {
     .slice(events.indexOf(recordedError))
     .find((event) => event.type === "llm.request");
   if (afterFailure?.attempt !== 1) throw new Error("the retry attempt was not recorded after the failure");
+
+  // A clean run must contain no unlabelled unpaired llm.request. That shape is
+  // the signature of an abandoned call, so as long as it also appears in runs
+  // that went fine, the tape has a permanent false positive for the exact
+  // pattern the sink exists to find.
+  const unpaired = events
+    .filter((event) => event.type === "llm.request" && !event.speculative)
+    .filter((event) => !events.some((other) =>
+      (other.type === "llm.response" || other.type === "llm.error") && other.reqId === event.reqId));
+  if (unpaired.length) {
+    throw new Error(`a clean run left ${unpaired.length} unlabelled llm.request(s) with no terminal event`);
+  }
+  if (events.find((event) => event.type === "loop.exit")?.abandoned !== 0) {
+    throw new Error("a clean run reported abandoned work");
+  }
   const source = new ReplaySource(loadEvents(runDir), new BlobStore(runDir));
   const replayedResponse = source.nextLLMExchange(request).response;
   if ((replayedResponse as any).message?.content !== "recorded response") throw new Error("replay did not serve the recorded model response");
@@ -189,6 +204,52 @@ async function main() {
     stoppedAtDivergence = error instanceof CounterfactualDivergence;
   }
   if (!stoppedAtDivergence) throw new Error("counterfactual replay served a stale later response");
+
+  // A run that ends with a request still in flight has to say so. `exit()`
+  // closes the recorder, so the terminal event for that request is dropped by
+  // the try/catch that keeps recording from ever changing a result — and the
+  // gap it leaves reads exactly like a recorder that stopped writing.
+  delete process.env.ECHO_REPLAY_DIR;
+  const abandonedRoot = mkdtempSync(join(tmpdir(), "echo-abandoned-"));
+  process.env.ECHO_LOG_DIR = abandonedRoot;
+  // So the speculative call below settles inside the test rather than holding
+  // the process open for the full default deadline.
+  process.env.ECHO_LLM_TIMEOUT_MS = "50";
+  const abandonedInner = new FakeBrain();
+  const abandonedBrain = new RecordingBrain(abandonedInner, "test", {}, { autoResume: false });
+  abandonedBrain.on("error", () => {});
+  abandonedBrain.on("text", () => {});
+  abandonedBrain.on("turnEnd", () => {});
+  abandonedBrain.send("start a call the run never waits for");
+  let neverAnswered: (value: unknown) => void = () => {};
+  const inFlight = recordLLM({ model: "test", messages: ["never answered"] }, () =>
+    new Promise((resolve) => { neverAnswered = resolve; }));
+  // Labelled work is allowed to be abandoned and must not be reported.
+  const speculative = recordLLM({ model: "test", messages: ["a guess"] }, () => new Promise(() => {}), 0, {
+    speculative: true,
+  }).catch(() => { /* a guess nobody waits for is allowed to fail */ });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  currentLoop()?.exit("stream_closed", { iteration: 1, detail: "ended with a request in flight" });
+  neverAnswered({ message: { content: "too late" } });
+  await inFlight;
+  await speculative;
+
+  const abandonedRun = join(abandonedRoot, readdirSync(abandonedRoot)[0]);
+  const abandonedEvents = loadEvents(abandonedRun);
+  const reported = abandonedEvents.filter((event) => event.type === "work.abandoned");
+  if (reported.length !== 1) {
+    throw new Error(`expected exactly one abandoned call to be named, got ${reported.length}`);
+  }
+  if (reported[0].kind !== "llm.request") throw new Error("the abandoned call was not named as an llm.request");
+  const abandonedRequest = abandonedEvents.find((event) => event.type === "llm.request" && !event.speculative);
+  if (reported[0].id !== abandonedRequest?.reqId) throw new Error("the abandoned call does not name the request it left open");
+  const abandonedExit = abandonedEvents.find((event) => event.type === "loop.exit");
+  if (abandonedExit?.abandoned !== 1) throw new Error("the exit event did not count the abandoned call");
+  if (abandonedEvents.findIndex((event) => event.type === "work.abandoned") > abandonedEvents.indexOf(abandonedExit!)) {
+    throw new Error("the abandoned call was recorded after the exit it explains");
+  }
+  delete process.env.ECHO_LOG_DIR;
+  delete process.env.ECHO_LLM_TIMEOUT_MS;
 
   // Full journaling is now the default so interrupted tasks can reconstruct
   // their checkpoint. Privacy-sensitive installations can explicitly keep a

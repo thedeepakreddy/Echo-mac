@@ -300,6 +300,19 @@ export class LoopLog {
   private writeFailed = false;
   private endedBecause: ExitReason | null = null;
   private sealed = false;
+  /**
+   * Work the loop has started and not yet finished.
+   *
+   * An `llm.request` with no `llm.response` and no `llm.error` is exactly the
+   * signature of a call that was walked away from — and it is produced by the
+   * current code, because `exit()` closes the recorder and a request still in
+   * flight then has its terminal event silently dropped by the try/catch that
+   * keeps recording from ever changing a result. The gap that leaves in the
+   * tape is indistinguishable from a recorder that simply stopped writing.
+   *
+   * So the loop keeps the ledger and names what it abandoned on the way out.
+   */
+  private readonly openWork = new Map<string, { kind: string; detail?: string; since: number }>();
 
   constructor(
     private readonly recorder: Recorder,
@@ -393,6 +406,21 @@ export class LoopLog {
     });
   }
 
+  /**
+   * Register work whose completion the loop expects to record later.
+   *
+   * Callers that legitimately abandon what they start — a speculative or
+   * warm-up request — must not register it, so that an unpaired event in the
+   * tape always means something went wrong.
+   */
+  openedWork(id: string, kind: string, detail?: string): void {
+    this.openWork.set(id, { kind, detail, since: Date.now() });
+  }
+
+  closedWork(id: string): void {
+    this.openWork.delete(id);
+  }
+
   /** A non-fatal note worth having in the same file as everything else. */
   note(type: string, payload: Record<string, unknown> = {}): void {
     this.write(type, { iteration: this.iteration, ...payload });
@@ -408,11 +436,32 @@ export class LoopLog {
     this.endedBecause = reason;
     this.stopHeartbeat();
 
+    // Whatever is still open was abandoned. Recorded before the exit event, and
+    // counted on it, so a reader sees the abandoned call in the same place they
+    // already look for the reason.
+    const abandoned = [...this.openWork.entries()];
+    for (const [id, work] of abandoned) {
+      this.write(
+        "work.abandoned",
+        {
+          id,
+          kind: work.kind,
+          detail: work.detail,
+          openForMs: Date.now() - work.since,
+          iteration: this.iteration,
+          reason,
+        },
+        true
+      );
+    }
+    this.openWork.clear();
+
     const error = payload.error === undefined ? undefined : serializeError(payload.error);
     this.write(
       "loop.exit",
       {
         reason,
+        abandoned: abandoned.length,
         iteration: payload.iteration ?? this.iteration,
         lastTool: payload.lastTool ?? this.lastTool,
         lastToolArgsHash: payload.lastToolArgsHash ?? this.lastToolArgsHash,
