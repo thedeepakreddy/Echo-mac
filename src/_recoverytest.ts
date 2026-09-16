@@ -263,14 +263,30 @@ console.log("  stopping mid-backoff cancels the retry for good");
       // Long enough that the retry is still waiting when the user gives up.
       recoveryDelayMs: 5000,
     });
+    // The failed attempt's turnEnd is suppressed so recovery can carry the task
+    // on. Cancel that recovery and nothing is left to close the turn, so the
+    // caller waits in "thinking" forever unless the cancel says so itself.
+    let ends = 0;
+    let spoken = 0;
+    brain.on("turnEnd", () => ends++);
+    brain.on("text", () => spoken++);
+    brain.on("error", () => {});
     brain.send("a task the user gives up on");
     await wait(60); // let the first attempt fail into its backoff
 
     const waiting = runDirs(root).map(readRecoveryCheckpoint).filter(Boolean);
     ok(waiting.some((cp) => cp!.status === "pending"),
       `${label}: the retry is genuinely waiting before we stop it`);
+    ok(ends === 0, `${label}: the turn is still open while the retry waits`);
+    const runsBefore = runDirs(root).length;
+    const spokenBefore = spoken;
 
     await halt(brain);
+    await wait(120); // long enough for the cancelled retry to have fired
+
+    ok(ends === 1, `${label}: the cancel ends the turn exactly once`);
+    ok(spoken > spokenBefore, `${label}: the user is told the cancel took effect`);
+    ok(runDirs(root).length === runsBefore, `${label}: no new run begins after the cancel`);
 
     const after = runDirs(root).map(readRecoveryCheckpoint).filter(Boolean);
     ok(after.length > 0 && after.every((cp) => cp!.status !== "pending"),

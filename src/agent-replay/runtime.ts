@@ -824,14 +824,37 @@ export class RecordingBrain extends Brain {
    * A new command has always cancelled the retry; interrupting and stopping
    * have to mean at least as much as talking over it.
    */
-  private cancelPendingRecovery(): void {
+  private cancelPendingRecovery(cause: "superseded" | "halted"): void {
     if (!this.recoveryTimer || this.checkpoint?.status !== "pending") return;
     clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
-    this.checkpoint.status = "cancelled";
-    this.finalizeTask(this.checkpoint, "cancelled");
-    const lastDir = this.checkpoint.runDirs.at(-1);
-    if (lastDir) this.persistCheckpoint(lastDir, this.checkpoint);
+    const checkpoint = this.checkpoint;
+    checkpoint.status = "cancelled";
+    // The user aborted. The provider failure that opened this backoff is no
+    // longer the story, and must not be reported as the reason the turn ended.
+    checkpoint.lastExitReason = "abort_signal";
+    checkpoint.lastExitDetail =
+      cause === "halted" ? "cancelled during the recovery backoff" : "superseded by a new command";
+    this.finalizeTask(checkpoint, "cancelled");
+    const lastDir = checkpoint.runDirs.at(-1);
+    if (lastDir) this.persistCheckpoint(lastDir, checkpoint);
+
+    // A new command is about to open its own run, which will end itself. Only a
+    // halt leaves the turn with nothing left to close it.
+    if (cause === "halted") {
+      // Nothing else can end this turn. The failed attempt's `turnEnd` was
+      // suppressed precisely so recovery could carry the task on, and the
+      // recovery has just been cancelled — so without this the caller waits in
+      // "thinking" forever and the cancel is the thing that silently does
+      // nothing. For an agent with real machine access, a cancel that appears
+      // not to land is worse than a stop that does.
+      //
+      // `this.checkpoint` is still set here on purpose: emitTerminal reads
+      // `lastExitReason` from it, and abort_signal is what keeps the stale
+      // provider error from surfacing as this turn's failure.
+      this.emit("text", `Stopped. ${checkpoint.actor.name} will not resume that task.`);
+      this.emitTerminal(checkpoint.lastRunId);
+    }
     this.checkpoint = null;
   }
 
@@ -843,7 +866,7 @@ export class RecordingBrain extends Brain {
 
   send(userText: string, audio?: AudioTurn, opts?: SendOptions): void {
     this.lastSendOpts = opts;
-    this.cancelPendingRecovery();
+    this.cancelPendingRecovery("superseded");
     if (this.context && !this.context.loop.hasExited) {
       // A follow-up can arrive while the provider is still draining the same
       // conversation. Keep it in the owning clone's async context and tape.
@@ -886,7 +909,7 @@ export class RecordingBrain extends Brain {
     this.interrupted = true;
     // Before the unconditional clear below, which would otherwise drop the
     // timer and leave the checkpoint behind as pending.
-    this.cancelPendingRecovery();
+    this.cancelPendingRecovery("halted");
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
     this.inner.interrupt();
@@ -899,7 +922,7 @@ export class RecordingBrain extends Brain {
     this.interrupted = true;
     // Quitting mid-backoff is the likeliest way to hit this: the loop has just
     // gone quiet after a 429, and the app is closed before the retry fires.
-    this.cancelPendingRecovery();
+    this.cancelPendingRecovery("halted");
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
     const context = this.context;
