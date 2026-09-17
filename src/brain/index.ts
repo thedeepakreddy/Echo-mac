@@ -2,6 +2,7 @@ import { Brain, LOOP_CAPS, type BrainExecutionLimits } from "./types.js";
 import { ClaudeBrain } from "./claude.js";
 import { GeminiBrain } from "./gemini.js";
 import { OllamaBrain } from "./ollama.js";
+import { OpenAIBrain } from "./openai.js";
 import { RecordingBrain, type RecordingBrainOptions } from "../agent-replay/runtime.js";
 import { configuredReplayDirectory, configuredReplayProvider } from "../agent-replay/runtime.js";
 import { RecordedPlaybackBrain } from "../agent-replay/playback-brain.js";
@@ -10,7 +11,7 @@ import type { JarvisConfig } from "../config.js";
 
 export { Brain } from "./types.js";
 
-export type Provider = "claude" | "gemini" | "ollama";
+export type Provider = "claude" | "gemini" | "ollama" | "openai";
 
 export { LOOP_CAPS } from "./types.js";
 
@@ -51,6 +52,21 @@ export function createBrain(cfg: JarvisConfig, options: CreateBrainOptions = {})
     }
     console.warn(
       `[brain] config selects gemini but ${cfg.gemini.apiKeyEnv} is not set — falling back to Claude.`
+    );
+  }
+
+  if (requestedProvider === "openai") {
+    const key = process.env[cfg.openai.apiKeyEnv];
+    if (key || replayDir) {
+      selected = new OpenAIBrain(cfg, key ?? "replay-no-network", options.limits);
+      provider = "openai";
+      return {
+        brain: new RecordingBrain(selected, provider, { ...LOOP_CAPS.openai, maxIterations: options.limits?.maxIterations ?? LOOP_CAPS.openai.maxIterations, model: cfg.openai.model }, options),
+        provider,
+      };
+    }
+    console.warn(
+      `[brain] config selects openai but ${cfg.openai.apiKeyEnv} is not set — falling back to Claude.`
     );
   }
 

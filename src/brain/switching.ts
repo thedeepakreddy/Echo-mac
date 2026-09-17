@@ -15,13 +15,14 @@ import type { Provider } from "./index.js";
  * alone and goes to the brain as a normal command.
  */
 
-export const PROVIDERS: Provider[] = ["claude", "gemini", "ollama"];
+export const PROVIDERS: Provider[] = ["claude", "gemini", "ollama", "openai"];
 
 /** How each brain is named out loud. */
 export const PROVIDER_LABELS: Record<Provider, string> = {
   claude: "Claude",
   gemini: "Gemini",
   ollama: "the local model",
+  openai: "ChatGPT",
 };
 
 /**
@@ -43,6 +44,11 @@ const ALIASES: Record<string, Provider> = {
   local: "ollama",
   offline: "ollama",
   deepakllm: "ollama",
+  openai: "openai",
+  chatgpt: "openai",
+  gpt: "openai",
+  gpt4: "openai",
+  gpt4o: "openai",
 };
 
 /**
@@ -98,10 +104,14 @@ export function parseBrainSwitch(command: string): Provider | null {
 export function unavailableReason(
   provider: Provider,
   env: NodeJS.ProcessEnv,
-  geminiKeyEnv = "GEMINI_API_KEY"
+  geminiKeyEnv = "GEMINI_API_KEY",
+  openaiKeyEnv = "OPENAI_API_KEY"
 ): string | null {
   if (provider === "gemini" && !env[geminiKeyEnv]?.trim()) {
     return `${geminiKeyEnv} isn't set`;
+  }
+  if (provider === "openai" && !env[openaiKeyEnv]?.trim()) {
+    return `${openaiKeyEnv} isn't set`;
   }
   return null;
 }
