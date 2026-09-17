@@ -12,3 +12,9 @@ rewind.jsonl.bak
 models/
 deepak_voice_source/
 rewind/
+
+# Named Echo/clone run logs hold request text, tool arguments/results and checkpoints.
+runs/*/
+
+# A local checkout of Osiris, cloned by scripts/osiris_local.mjs.
+vendor/osiris/

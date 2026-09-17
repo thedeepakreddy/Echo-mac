@@ -70,10 +70,14 @@ if (wantExport) {
   rmSync(BUNDLE, { recursive: true, force: true });
   mkdirSync(screensOut, { recursive: true });
 
-  let copied = 0;
+  // `examplesWithScreenshots` counts references. `uniqueScreenshots` counts
+  // files: several next-actions can correctly share one pre-action frame.
+  let examplesWithScreenshots = 0;
+  const copiedNames = new Set<string>();
   let missing = 0;
   const portable: TrainingExample[] = set.examples.map((e) => {
     if (!e.image) return e;
+    examplesWithScreenshots += 1;
     if (!existsSync(e.image)) {
       // The row survives without its picture; a text-only example still
       // teaches tool choice, which is most of the value early on.
@@ -82,8 +86,10 @@ if (wantExport) {
     }
     const name = basename(e.image);
     try {
-      copyFileSync(e.image, join(screensOut, name));
-      copied += 1;
+      if (!copiedNames.has(name)) {
+        copyFileSync(e.image, join(screensOut, name));
+        copiedNames.add(name);
+      }
       return { ...e, image: `screens/${name}` };
     } catch {
       missing += 1;
@@ -101,7 +107,8 @@ if (wantExport) {
       {
         generatedAt: new Date().toISOString(),
         examples: lines.length,
-        screenshots: copied,
+        examplesWithScreenshots,
+        uniqueScreenshots: copiedNames.size,
         droppedScreenshots: missing,
         dropped: set.dropped,
         sourceCounts: stats.bySource,
@@ -116,7 +123,7 @@ if (wantExport) {
 
   console.log(`\nBundle written to ${BUNDLE}`);
   console.log(`  training.jsonl   ${lines.length} examples`);
-  console.log(`  screens/         ${copied} images${missing ? `, ${missing} unavailable` : ""}`);
+  console.log(`  screens/         ${copiedNames.size} unique images used by ${examplesWithScreenshots} examples${missing ? `, ${missing} unavailable` : ""}`);
   console.log(`  paths are relative — the folder can be moved as-is`);
 }
 console.log("");

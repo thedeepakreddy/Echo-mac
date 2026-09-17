@@ -1,0 +1,730 @@
+<!doctype html><meta charset="utf-8"><style>/*
+ * ECHO — arc reactor HUD.
+ *
+ * Built to read as a real machined reactor: a brushed-steel bezel, a ring of
+ * copper coil windings that rotate, a counter-rotating turbine, a white-hot
+ * plasma core under a curved glass dome. Everything scales from --size, so one
+ * value resizes the whole thing cleanly.
+ *
+ * The container (#orb) is the drag handle and TILTS with the cursor; the RINGS
+ * inside it rotate. Keeping spin off the container means the parallax tilt and
+ * the rotation never fight. Colour (--glow) and spin speed (--spin) are driven
+ * by body[data-status], because the reactor is the only status indicator.
+ */
+:root {
+  --size: 170px;
+  --glow: #59f0ff;
+  --spin: 9s;
+  --level: 0;
+  /* Metals, tuned once so the whole reactor stays consistent. */
+  --steel-hi: #9aa7ad;
+  --steel: #565f64;
+  --steel-lo: #21262a;
+  --copper-hi: #f0a464;
+  --copper: #c06a34;
+  --copper-lo: #5e2f16;
+  --copper-shadow: #180b04;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding-bottom: 22px;
+  perspective: 850px; /* gives the tilt real depth */
+}
+
+/* ---- chat box (long-press the core to reveal) ---- */
+#chat {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 300px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 20, 24, 0.88);
+  border: 1px solid color-mix(in srgb, var(--glow) 45%, transparent);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--glow) 30%, transparent),
+    0 10px 30px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  animation: chat-in 160ms ease-out;
+}
+#chat[hidden] {
+  display: none;
+}
+@keyframes chat-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+#input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #e8f4ff;
+  font: 13px/1.4 -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  user-select: text;
+}
+#input::placeholder { color: rgba(232, 244, 255, 0.4); }
+
+#send {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #04222b;
+  background: var(--glow);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--glow) 60%, transparent);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+#send:hover { transform: scale(1.08); }
+#send:active { transform: scale(0.94); }
+
+/* ===================================================================
+   THE REACTOR
+   =================================================================== */
+
+/* Container: drag handle + parallax tilt + the volumetric outer glow.
+   It does NOT spin — the rings inside do. */
+.loader {
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  -webkit-app-region: drag;
+  transform-style: preserve-3d;
+  transition: transform 120ms ease-out, filter 300ms ease;
+  /* A restrained bloom onto the desktop behind it — enough to read as lit,
+     not so much that it washes out the machined detail. */
+  filter:
+    drop-shadow(0 0 calc(var(--size) * 0.05) color-mix(in srgb, var(--glow) 32%, transparent))
+    drop-shadow(0 calc(var(--size) * 0.06) calc(var(--size) * 0.09) rgba(0, 0, 0, 0.5));
+}
+
+.loader > * {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ---- 1. machined steel bezel: a clean brushed-metal OUTER ring ---- */
+.bezel {
+  inset: 0;
+  background:
+    /* bright bevel at the outer and inner edges of the ring */
+    radial-gradient(circle closest-side,
+      transparent 79%, rgba(255, 255, 255, 0.22) 81%, transparent 84%,
+      transparent 95%, rgba(255, 255, 255, 0.18) 97%, transparent 100%),
+    /* soft turned-metal sheen: a few broad bands, not a barcode */
+    conic-gradient(from 210deg,
+      #737d82, #2b3135, #8b959b, #3a4145, #7d878c, #262c30,
+      #8b959b, #303639, #737d82);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 78%, #000 80% 100%);
+  mask: radial-gradient(circle closest-side, transparent 78%, #000 80% 100%);
+}
+/* Subtle recessed bolt heads set into the steel ring. */
+.bezel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 12deg,
+      transparent 0deg 28deg,
+      rgba(0, 0, 0, 0.5) 28deg 30deg,
+      rgba(255, 255, 255, 0.12) 30deg 30.6deg,
+      transparent 30.6deg 32deg);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 84%, #000 86% 93%, transparent 95%);
+  mask: radial-gradient(circle closest-side, transparent 84%, #000 86% 93%, transparent 95%);
+}
+
+/* ---- 2. copper coil windings (the ring that rotates) ---- */
+.coils {
+  inset: 0;
+  /* Ten wound copper blocks: each shades dark→body→highlight→body→dark so it
+     reads as a rounded coil, with a black gap between blocks. */
+  background:
+    repeating-conic-gradient(from -18deg,
+      var(--copper-shadow) 0deg 4deg,
+      var(--copper-lo) 4deg 10deg,
+      var(--copper) 10deg 15deg,
+      var(--copper-hi) 15deg 21deg,
+      var(--copper) 21deg 26deg,
+      var(--copper-lo) 26deg 32deg,
+      var(--copper-shadow) 32deg 36deg);
+  /* Kept to the middle band so it sits clearly inside the steel ring. */
+  -webkit-mask: radial-gradient(circle closest-side, transparent 55%, #000 58% 77%, transparent 80%);
+  mask: radial-gradient(circle closest-side, transparent 55%, #000 58% 77%, transparent 80%);
+  animation: spin var(--spin) linear infinite;
+}
+/* A faint tinted sheen of the coils in the current status colour, so the
+   copper picks up the reactor's mood without losing its metal. */
+.coils::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg,
+    transparent, color-mix(in srgb, var(--glow) 45%, transparent), transparent 45%);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 55%, #000 58% 77%, transparent 80%);
+  mask: radial-gradient(circle closest-side, transparent 55%, #000 58% 77%, transparent 80%);
+  mix-blend-mode: screen;
+  opacity: 0.65;
+}
+
+/* ---- 3. inner turbine spokes (counter-rotating) ---- */
+.turbine {
+  inset: 0;
+  background:
+    repeating-conic-gradient(from 0deg,
+      transparent 0deg 10deg,
+      rgba(0, 0, 0, 0.6) 10deg 12deg,
+      color-mix(in srgb, var(--glow) 45%, transparent) 12deg 13deg,
+      transparent 13deg 20deg);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 37%, #000 40% 54%, transparent 57%);
+  mask: radial-gradient(circle closest-side, transparent 37%, #000 40% 54%, transparent 57%);
+  animation: spin-reverse calc(var(--spin) * 0.7) linear infinite;
+  opacity: 0.85;
+}
+
+/* ---- 4. bright energy ring between coils and core ---- */
+.ring {
+  inset: calc(var(--size) * 0.24);
+  border: calc(var(--size) * 0.014) solid color-mix(in srgb, var(--glow) 85%, white);
+  box-shadow:
+    0 0 calc(var(--size) * 0.05) var(--glow),
+    inset 0 0 calc(var(--size) * 0.05) color-mix(in srgb, var(--glow) 70%, transparent);
+  background: transparent;
+}
+
+/* ---- 5. a single energy arc sweeping around over the coils ---- */
+.sweep {
+  inset: 0;
+  background: conic-gradient(from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--glow) 92%, white) 7deg,
+    transparent 34deg,
+    transparent 360deg);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 55%, #000 58% 78%, transparent 80%);
+  mask: radial-gradient(circle closest-side, transparent 55%, #000 58% 78%, transparent 80%);
+  filter: drop-shadow(0 0 calc(var(--size) * 0.05) var(--glow));
+  animation: spin calc(var(--spin) * 0.42) linear infinite;
+  opacity: 0.9;
+}
+
+/* ---- 5b. the old reactor's dashed "gear" rings, overlaid ----
+ * Three dashed circles in a fixed cyan (#55eeef): a big-toothed outer ring, a
+ * fine counter-turning middle ring, and one hugging the core. Dashed borders
+ * read as gear teeth / energy segments, and each turns at its own speed off the
+ * shared --spin so they still respond to the reactor's state.
+ */
+.gear {
+  border-radius: 50%;
+  border-style: dashed;
+  border-color: #55eeef;
+  background: transparent;
+  filter: drop-shadow(0 0 calc(var(--size) * 0.03) #55eeef);
+}
+.gear.g1 {
+  inset: calc(var(--size) * -0.015);
+  border-width: calc(var(--size) * 0.1);
+  opacity: 0.62;
+  animation: spin var(--spin) linear infinite;
+}
+/* Inner tooth ring just inside the outer teeth — the old reactor's second rim
+   ring, counter-turning against the outer for a geared-machine feel. */
+.gear.g4 {
+  inset: calc(var(--size) * 0.1);
+  border-width: calc(var(--size) * 0.038);
+  opacity: 0.7;
+  animation: spin-reverse calc(var(--spin) * 1.15) linear infinite;
+}
+.gear.g2 {
+  inset: calc(var(--size) * 0.15);
+  border-width: calc(var(--size) * 0.02);
+  opacity: 0.75;
+  animation: spin-reverse calc(var(--spin) * 1.5) linear infinite;
+}
+.gear.g3 {
+  inset: calc(var(--size) * 0.27);
+  border-width: calc(var(--size) * 0.05);
+  opacity: 0.65;
+  animation: spin calc(var(--spin) * 0.8) linear infinite;
+}
+/* Blue teeth normally (idle / listening); the whole gear stack takes on the
+   state colour when Echo is thinking (purple), speaking (yellow), acting
+   (green) or in error (red) — the same --glow that drives the core, so the
+   rings and the core change together. */
+body[data-status="thinking"] .gear,
+body[data-status="speaking"] .gear,
+body[data-status="acting"] .gear,
+body[data-status="error"] .gear {
+  border-color: var(--glow);
+  filter: drop-shadow(0 0 calc(var(--size) * 0.035) var(--glow));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gear { animation: none !important; }
+}
+
+/* ---- 6. the plasma core (click target + voice level) ---- */
+.core {
+  width: 44%;
+  height: 44%;
+  border-radius: 50%;
+  -webkit-app-region: no-drag; /* the one region that stays clickable */
+  cursor: pointer;
+  /* A dark well rim-lit by the glow, so the glowing triangle at the centre is
+     the focal point rather than a bright blob. */
+  background:
+    radial-gradient(circle at 50% 46%,
+      color-mix(in srgb, var(--glow) 22%, #03151b) 0%,
+      color-mix(in srgb, var(--glow) 55%, #03151b) 46%,
+      var(--glow) 68%,
+      color-mix(in srgb, var(--glow) 55%, #04222b) 84%,
+      #04141a 100%);
+  box-shadow:
+    0 0 calc(var(--size) * 0.04) color-mix(in srgb, var(--glow) 40%, white),
+    0 0 calc(var(--size) * 0.16) var(--glow),
+    0 0 calc(var(--size) * 0.28) color-mix(in srgb, var(--glow) 30%, transparent),
+    inset 0 0 calc(var(--size) * 0.05) rgba(255, 255, 255, 0.25),
+    inset 0 0 calc(var(--size) * 0.16) rgba(0, 0, 0, 0.55);
+  transform: scale(calc(1 + var(--level) * 0.45));
+  transition: transform 90ms ease-out, box-shadow 220ms ease;
+  animation: core-flicker 3.2s ease-in-out infinite;
+}
+/* The glowing triangular emblem — the lit centrepiece of the reactor.
+   A solid plate of lit metal; the design is cut into it, not drawn on top. */
+.core .triad {
+  position: absolute;
+  inset: 22%;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--glow) 55%, white), var(--glow));
+  clip-path: polygon(50% 6%, 93% 88%, 7% 88%);
+  filter:
+    drop-shadow(0 0 calc(var(--size) * 0.045) var(--glow))
+    drop-shadow(0 0 calc(var(--size) * 0.015) rgba(255, 255, 255, 0.7));
+  animation: triad-pulse 2s ease-in-out infinite;
+}
+
+/* ---- 6b. electric neuron strands: inner ring -> triangle ----
+ * Dashed, glowing filaments that run from the inner ring into the triangle,
+ * with the dashes travelling inward so energy looks like it feeds the core.
+ * Drawn behind the triangle so they appear to emanate from it. Coloured by the
+ * state, like everything else.
+ */
+.core .neurons {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 0 calc(var(--size) * 0.012) var(--glow));
+  animation: neuron-flicker 2.6s ease-in-out infinite;
+}
+.core .neurons .nx {
+  fill: none;
+  stroke: color-mix(in srgb, var(--glow) 75%, white);
+  stroke-width: 0.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2.5 5;
+  animation: neuron-flow 1.15s linear infinite;
+}
+.core .neurons .nn {
+  fill: color-mix(in srgb, var(--glow) 55%, white);
+}
+@keyframes neuron-flow { to { stroke-dashoffset: 15; } }
+@keyframes neuron-flicker { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) {
+  .core .neurons, .core .neurons .nx { animation: none !important; }
+}
+
+/* ---- 7. curved glass dome (static specular highlight) ---- */
+.glass {
+  inset: 0;
+  background:
+    radial-gradient(ellipse 55% 40% at 34% 26%, rgba(255, 255, 255, 0.28), transparent 60%),
+    radial-gradient(ellipse 30% 18% at 68% 74%, rgba(255, 255, 255, 0.08), transparent 60%);
+  mix-blend-mode: screen;
+}
+
+/* ---- animations ---- */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes core-flicker {
+  0%, 100% { filter: brightness(1); }
+  45% { filter: brightness(1.12); }
+  70% { filter: brightness(0.94); }
+}
+@keyframes triad-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+/* Brief glitch on every state change — a hue-shifted shudder, transform-free
+   so it never fights the container's parallax tilt. */
+@keyframes glitch-anim {
+  0% { filter: none; }
+  25% { filter: hue-rotate(70deg) saturate(1.6); transform: translateX(-2px); }
+  50% { filter: hue-rotate(-60deg) saturate(1.4); transform: translateX(2px); }
+  75% { filter: hue-rotate(30deg); transform: translateX(-1px); }
+  100% { filter: none; }
+}
+.loader.glitch { animation: glitch-anim 0.28s linear; }
+
+/* ---- status: colour + spin speed carry all the meaning ---- */
+/* The wake pulse: a single fast bloom the moment the name is heard. */
+@keyframes wake-pulse {
+  0%   { filter: brightness(1) saturate(1); transform: scale(1); }
+  18%  { filter: brightness(2.2) saturate(1.6); transform: scale(1.08); }
+  100% { filter: brightness(1) saturate(1); transform: scale(1); }
+}
+#orb.wake, #orb50.wake { animation: wake-pulse 0.7s ease-out !important; }
+/* Conversation window open: a steady ring so a glance says "no need to say Echo". */
+body[data-session="open"] #orb, body[data-session="open"] #orb50 {
+  box-shadow: 0 0 0 3px rgba(89, 240, 255, 0.28), 0 0 28px rgba(89, 240, 255, 0.35);
+  border-radius: 50%;
+}
+body[data-status="idle"]      { --glow: #59f0ff; --spin: 10s; }
+body[data-status="listening"] { --glow: #45e0ff; --spin: 4s; }
+body[data-status="thinking"]  { --glow: #b98cff; --spin: 2s; }
+body[data-status="speaking"]  { --glow: #ffcf40; --spin: 6s; }
+body[data-status="acting"]    { --glow: #74f2a0; --spin: 1.1s; }
+body[data-status="asleep"]    { --glow: #ff4d4d; --spin: 22s; }
+body[data-status="error"]     { --glow: #ff6b6b; --spin: 0s; }
+
+/* Listening / speaking make the whole core breathe. */
+body[data-status="listening"] .core,
+body[data-status="speaking"] .core {
+  animation: core-flicker 3.2s ease-in-out infinite, core-breathe 1.7s ease-in-out infinite;
+}
+@keyframes core-breathe {
+  0%, 100% { box-shadow: 0 0 calc(var(--size) * 0.04) color-mix(in srgb, var(--glow) 40%, white), 0 0 calc(var(--size) * 0.15) var(--glow), inset 0 0 calc(var(--size) * 0.06) rgba(255,255,255,.3); }
+  50% { box-shadow: 0 0 calc(var(--size) * 0.07) color-mix(in srgb, var(--glow) 40%, white), 0 0 calc(var(--size) * 0.24) var(--glow), 0 0 calc(var(--size) * 0.38) color-mix(in srgb, var(--glow) 28%, transparent), inset 0 0 calc(var(--size) * 0.07) rgba(255,255,255,.4); }
+}
+
+/* Thinking spins the coils harder and hazes the core violet. */
+body[data-status="thinking"] .sweep { opacity: 1; }
+
+/* A dead bridge must be obvious even with no text on screen. */
+body[data-status="error"] .core { animation: core-alarm 0.9s steps(2, end) infinite; }
+body[data-status="error"] .coils,
+body[data-status="error"] .sweep { animation-play-state: paused; }
+@keyframes core-alarm { 0% { opacity: 1; } 100% { opacity: 0.4; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .coils, .turbine, .sweep, .core, .core .triad { animation: none !important; }
+}
+
+/* ---- away mode ----------------------------------------------------------
+ * Armed: normal look. The moment you leave the desk it drops to a dim idle,
+ * like a reactor powering down to standby.
+ */
+body[data-away="yes"] .loader {
+  opacity: 0.3;
+  filter: saturate(0.5) drop-shadow(0 0 calc(var(--size) * 0.06) color-mix(in srgb, var(--glow) 40%, transparent));
+  transition: opacity 900ms ease, filter 900ms ease;
+}
+body[data-away="yes"] .coils { animation-duration: 26s; }
+
+body[data-away-mode="on"]:not([data-away]) .loader {
+  transition: opacity 500ms ease, filter 500ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-away="yes"] .loader { transition: none; }
+}
+
+/* ============================================================
+   Mark 50 skin — the rendered triangular reactor.
+
+   Composited from the render in assets/ rather than redrawn in CSS. Tracing
+   that geometry by hand never matches the model, and the render already IS the
+   model; the job here is only to make it live.
+   ============================================================ */
+
+/* Exactly one reactor is ever in the layout. Hiding with [hidden] alone is not
+   enough — .orb50 sets display, which would override it. */
+body:is([data-skin="mark50"], [data-skin="jarvis"]) #orb { display: none; }
+body:not([data-skin="mark50"]):not([data-skin="jarvis"]) #orb50 { display: none; }
+
+.orb50 {
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  display: grid;
+  place-items: center;
+  -webkit-app-region: drag;
+  transform-style: preserve-3d;
+  transition: transform 120ms ease-out;
+}
+
+.orb50 > * {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The click target: an invisible patch over the glowing core.
+ *
+ * Sized and placed to sit on the bright inverted triangle rather than filling
+ * the tile, so everything around it — the plating, the shoulders, the light
+ * bars — stays draggable. Click to talk, long-press for the chat box,
+ * right-click to interrupt, exactly as on the classic skin's core. */
+.m50-hit {
+  width: 42%;
+  height: 38%;
+  align-self: center;
+  justify-self: center;
+  transform: translateY(-4%);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 12%;
+  background: transparent;
+}
+
+/* The render itself, untouched — this is the user's model. Clickable, because
+   on this skin the whole reactor is the target; there is no separate core ring
+   to aim at the way the classic skin has. */
+.m50-art {
+  /* Draggable, NOT the click target.
+   *
+   * -webkit-app-region applies to an element's whole RECTANGLE, never to its
+   * visible pixels — so marking this square image no-drag covered the entire
+   * reactor and left no way to pick the HUD up and move it. The body drags and
+   * a small region over the core clicks, which is how the classic skin behaves
+   * too. pointer-events stay off so clicks fall through to that region. */
+  pointer-events: none;
+  /* Rotate the artwork's own hue to the state colour. Tinting only the bloom
+     was not enough — the opaque artwork underneath stayed cyan and won, so the
+     reactor barely changed colour at all. Shifting the art itself is what makes
+     the whole thing read as purple when thinking or red on an error.
+     --m50-hue is set per status below; the render's base cyan is the zero point. */
+  filter:
+    hue-rotate(var(--m50-hue, 0deg))
+    contrast(var(--m50-contrast, 1))
+    saturate(var(--m50-sat, 1.15))
+    drop-shadow(0 calc(var(--size) * 0.05) calc(var(--size) * 0.08) rgba(0, 0, 0, 0.55));
+  transition: filter 420ms ease;
+}
+
+/* The glow. A brightened, blurred copy screen-blended over the original, so
+   light comes from the parts of the artwork that are ALREADY bright — the core
+   and the light bars — while the dark plating stays dark. A plain box-shadow
+   would ring the bounding box instead of following the model's shape.
+
+   Tinted by --glow so the reactor still changes colour with Echo's state, and
+   its strength rides --level (live mic level) so it breathes while you speak. */
+.m50-bloom {
+  mix-blend-mode: screen;
+  /* Blown out hard and thrown wide. The reference render is lit from inside —
+     the core is a light source, not a bright surface — and a timid bloom just
+     looks like a sticker. Two drop-shadows at different radii give the light a
+     tight hot edge and a wide atmospheric spill, which is what reads as
+     "glowing" rather than "outlined". */
+  filter:
+    hue-rotate(var(--m50-hue, 0deg))
+    contrast(var(--m50-contrast, 1))
+    brightness(2.6)
+    saturate(calc(var(--m50-sat, 1.15) * 1.05))
+    blur(calc(var(--size) * 0.028))
+    drop-shadow(0 0 calc(var(--size) * 0.045) var(--glow));
+  opacity: calc(0.54 + var(--level) * 0.4);
+  transition: opacity 140ms ease-out, filter 420ms ease;
+  animation: m50-breathe var(--spin, 9s) ease-in-out infinite;
+}
+
+/* A second, softer copy of the glow spread much wider. Layering two blurs is
+   how the light gets depth — one alone is either tight and hard or wide and
+   weak, never both. */
+.m50-bloom-wide {
+  mix-blend-mode: screen;
+  /* Carries the atmospheric spill that the round halo used to provide, but in
+     the model's own silhouette. A wide drop-shadow on top of the blur throws
+     light further out than blur alone can, without ever becoming a disc. */
+  /* Deliberately kept SHORT-RANGE.
+   *
+   * The HUD window is only 240px with the reactor at 170px sitting 22px off the
+   * bottom, and the window clips: any glow reaching past the frame stops dead at
+   * a straight line, so a wide spill does not fade out, it ends visibly. The
+   * previous blur + 0.13 drop-shadow threw light ~40px and was cut off at the
+   * bottom edge. Everything here now lands inside ~16px, which is less than the
+   * tightest margin, so the glow always finishes on its own. Intensity comes
+   * from the tight bloom instead, which is contained by definition. */
+  filter:
+    hue-rotate(var(--m50-hue, 0deg))
+    contrast(var(--m50-contrast, 1))
+    brightness(2.15)
+    saturate(calc(var(--m50-sat, 1.15) * 1.15))
+    blur(calc(var(--size) * 0.05));
+  opacity: calc(0.4 + var(--level) * 0.34);
+  transform: scale(1);
+  transition: opacity 160ms ease-out, filter 420ms ease;
+  animation: m50-breathe calc(var(--spin, 9s) * 1.15) ease-in-out infinite;
+}
+
+/* How far each state turns the render's cyan. Measured from the artwork's own
+   hue, so idle is zero and everything else is a rotation from there. */
+/* Per state: how far to turn the render's cyan, and how hard to push contrast.
+ *
+ * The contrast number is not decoration. The core of this model is near-white,
+ * and how "lit" it looks is a matter of contrast against the plating around it,
+ * not its own brightness — measured, every state renders the core at the same
+ * luminance (~139). What differs is the hue underneath it: yellow and cyan are
+ * the two brightest hues sRGB has (relative luminance .93 and .79), so a white
+ * core has almost nothing to stand out against, while purple (.28) and red
+ * (.21) make the same core read as white-hot.
+ *
+ * So the bright hues get their mid-tones pushed down. contrast() is the right
+ * tool rather than brightness(): it darkens the plating while leaving the
+ * near-white core where it is, which is exactly the separation that was
+ * missing. Saturation rises with it so the colour does not wash out to pastel. */
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="idle"]      { --m50-hue: 0deg;    --m50-contrast: 1.24; --m50-sat: 1.35; }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="listening"] { --m50-hue: 6deg;    --m50-contrast: 1.26; --m50-sat: 1.40; }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="thinking"]  { --m50-hue: 78deg;   --m50-contrast: 1.00; --m50-sat: 1.15; }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="speaking"]  { --m50-hue: -148deg; --m50-contrast: 1.38; --m50-sat: 1.45; }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="acting"]    { --m50-hue: -48deg;  --m50-contrast: 1.12; --m50-sat: 1.22; }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="asleep"]    { --m50-hue: -178deg; --m50-contrast: 1.00; --m50-sat: 1.15; }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="error"]     { --m50-hue: -185deg; --m50-contrast: 1.02; --m50-sat: 1.18; }
+
+/* Light spilling onto the desktop behind the reactor. Sits under the art, and
+   is the only round element — a soft field, not an outline. */
+/* There is deliberately no round halo layer.
+ *
+ * A radial-gradient behind the reactor is the obvious way to throw light onto
+ * the desktop, and it is wrong here: this model is TRIANGULAR, so a circular
+ * glow reads as a visible disc around it — the brighter the glow, the more
+ * obviously a circle. The spill has to come from blurred copies of the artwork
+ * itself, which are already the right shape. That is what .m50-bloom-wide is
+ * for, and dropping this layer also makes the skin cheaper to composite. */
+
+@keyframes m50-breathe {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.28); }
+}
+
+/* Thinking reads as a slow scan rather than a spin — the model has a fixed
+   "up", so rotating it would look broken rather than busy. */
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="thinking"] .m50-bloom,
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="thinking"] .m50-bloom-wide {
+  animation: m50-scan 1.6s ease-in-out infinite;
+}
+@keyframes m50-scan {
+  0%, 100% { opacity: 0.30; }
+  50%      { opacity: 0.95; }
+}
+
+/* Acting: a fast, urgent pulse. */
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="acting"] .m50-bloom,
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="acting"] .m50-bloom-wide {
+  animation: m50-scan 0.55s ease-in-out infinite;
+}
+
+/* Error: hard blink, matching the classic skin's alarm. */
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="error"] .m50-bloom,
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-status="error"] .m50-bloom-wide {
+  animation: m50-alarm 0.9s steps(2, end) infinite;
+}
+@keyframes m50-alarm {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0.15; }
+}
+
+/* Away: dim right down, readable from across the room. */
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-away="yes"] .m50-art { filter: grayscale(0.5) brightness(0.5); }
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-away="yes"] .m50-bloom,
+body:is([data-skin="mark50"], [data-skin="jarvis"])[data-away="yes"] .m50-bloom-wide { opacity: 0.12; }
+
+/* The render may not be in place yet. Rather than showing a broken-image icon
+   on an always-on-top transparent window, show nothing but the glow — it still
+   reads as a reactor, and the console line from hud.js says what to add. */
+.m50-art:not([src]), .m50-bloom:not([src]) { visibility: hidden; }
+
+body{background:#05070a;margin:0;display:flex;align-items:center;justify-content:center;height:100vh}
+#orb{--size:170px !important}
+</style><body data-status="error"><div id="orb" class="loader" title="Click the core or press ⌘⇧J to talk">
+      <!-- Machined outer bezel with bolt notches (static housing) -->
+      <div class="bezel"></div>
+      <!-- Signature copper coil windings — the ring that visibly rotates -->
+      <div class="coils"></div>
+      <!-- Inner turbine spokes, counter-rotating for depth -->
+      <div class="turbine"></div>
+      <!-- Bright energy ring that separates the coils from the core -->
+      <div class="ring"></div>
+      <!-- Sweeping energy arc that orbits the core -->
+      <div class="sweep"></div>
+      <!-- Three dashed "gear" rings (the old reactor's signature) layered over
+           the machined body: an outer, a middle counter-turning, and one around
+           the core. Fixed cyan (#55eeef) so they read as glowing energy teeth. -->
+      <div class="gear g1"></div>
+      <div class="gear g4"></div>
+      <div class="gear g2"></div>
+      <div class="gear g3"></div>
+      <!-- The core: click target, breathes with your voice. Its centrepiece is
+           the glowing triangle plate, with electric neuron strands running from
+           the inner ring into it. -->
+      <div class="core">
+        <svg class="neurons" viewBox="0 0 100 100" aria-hidden="true"><path class="nx" d="M65.0,49.9 L72.7,50.3 L80.5,51.9 L88.2,51.1 L96.0,50.5"/><path class="nx" d="M64.7,52.9 L72.6,52.6 L79.8,56.6 L88.0,54.8 L95.7,55.6"/><path class="nx" d="M64.5,53.9 L71.8,56.5 L79.6,57.5 L87.1,59.5 L93.6,64.6"/><path class="nx" d="M63.5,56.6 L70.5,59.9 L78.4,61.2 L84.6,66.3 L91.9,69.0"/><path class="nx" d="M62.9,57.6 L70.5,60.0 L76.3,65.5 L84.3,66.9 L91.7,69.7"/><path class="nx" d="M61.5,59.6 L67.3,64.8 L73.2,69.9 L79.0,75.0 L85.1,79.7"/><path class="nx" d="M61.1,60.1 L67.2,64.9 L72.0,71.2 L78.4,75.6 L84.5,80.5"/><path class="nx" d="M59.0,62.0 L62.7,68.9 L67.8,74.7 L73.7,80.1 L77.3,87.0"/><path class="nx" d="M57.5,63.0 L61.7,69.5 L64.1,77.1 L68.5,83.5 L73.5,89.6"/><path class="nx" d="M55.4,64.0 L58.6,71.1 L60.9,78.5 L65.1,85.1 L69.1,91.9"/><path class="nx" d="M53.7,64.5 L55.8,72.0 L58.4,79.3 L59.8,87.0 L63.9,93.9"/><path class="nx" d="M52.0,64.9 L53.4,72.5 L52.1,80.5 L53.7,88.1 L54.3,95.8"/><path class="nx" d="M49.8,65.0 L49.3,72.7 L49.3,80.5 L48.1,88.2 L47.4,95.9"/><path class="nx" d="M48.8,65.0 L47.2,72.6 L48.4,80.5 L46.8,88.1 L43.4,95.6"/><path class="nx" d="M45.9,64.4 L44.0,71.9 L41.4,79.3 L40.4,87.0 L38.3,94.5"/><path class="nx" d="M44.1,63.8 L40.5,70.7 L39.0,78.5 L32.8,84.2 L30.3,91.6"/><path class="nx" d="M42.9,63.2 L38.0,69.4 L35.5,76.8 L32.1,83.8 L27.4,90.1"/><path class="nx" d="M40.7,61.8 L36.7,68.5 L31.1,74.0 L27.5,81.0 L19.0,84.1"/><path class="nx" d="M39.5,60.7 L34.0,66.2 L27.8,71.0 L22.7,76.8 L16.1,81.2"/><path class="nx" d="M38.5,59.6 L32.2,64.2 L26.4,69.3 L19.3,72.8 L14.0,78.7"/><path class="nx" d="M36.6,56.7 L29.9,60.7 L22.4,63.0 L16.5,68.4 L9.1,71.1"/><path class="nx" d="M36.0,55.4 L28.9,58.4 L21.2,60.0 L13.6,61.8 L6.2,64.3"/><path class="nx" d="M35.7,54.6 L28.3,56.8 L21.2,60.2 L13.8,62.4 L5.6,62.2"/><path class="nx" d="M35.1,51.9 L27.4,52.3 L19.7,54.0 L12.1,55.5 L4.2,54.3"/><path class="nx" d="M35.0,49.3 L27.3,48.8 L19.5,50.5 L11.8,48.7 L4.0,51.6"/><path class="nx" d="M35.2,47.9 L27.5,46.9 L20.0,44.6 L11.9,45.8 L4.9,40.9"/><path class="nx" d="M35.4,46.6 L28.0,44.1 L20.4,42.5 L13.0,40.3 L6.0,36.2"/><path class="nx" d="M36.4,43.7 L28.6,42.3 L21.9,38.2 L14.9,34.9 L6.7,34.3"/><path class="nx" d="M37.3,42.1 L30.5,38.3 L22.9,35.9 L18.0,29.0 L10.3,26.8"/><path class="nx" d="M38.3,40.6 L32.2,35.8 L25.0,32.5 L20.6,25.4 L12.8,23.0"/><path class="nx" d="M38.8,40.0 L32.7,35.2 L28.4,28.5 L22.9,22.9 L16.7,18.2"/><path class="nx" d="M40.3,38.5 L36.0,32.0 L30.4,26.7 L24.4,21.5 L19.4,15.6"/><path class="nx" d="M42.3,37.2 L38.3,30.5 L33.5,24.4 L30.6,17.0 L24.1,11.9"/><path class="nx" d="M44.2,36.2 L43.0,28.3 L38.0,22.0 L35.3,14.7 L31.4,7.9"/><path class="nx" d="M46.3,35.5 L44.9,27.8 L41.0,20.8 L38.7,13.4 L36.0,6.1"/><path class="nx" d="M47.6,35.2 L45.3,27.7 L46.8,19.6 L43.0,12.4 L40.7,4.9"/><path class="nx" d="M49.4,35.0 L49.4,27.3 L49.3,19.5 L51.3,11.7 L50.1,4.0"/><path class="nx" d="M51.6,35.1 L52.6,27.4 L55.2,19.9 L56.4,12.3 L56.3,4.4"/><path class="nx" d="M53.7,35.5 L55.7,28.0 L55.4,19.9 L56.9,12.3 L59.4,5.0"/><path class="nx" d="M55.1,35.9 L58.5,28.9 L61.2,21.6 L65.4,14.9 L66.9,7.2"/><path class="nx" d="M57.9,37.2 L61.2,30.2 L66.4,24.3 L70.1,17.5 L74.3,10.9"/><path class="nx" d="M59.9,38.7 L64.5,32.4 L69.6,26.6 L75.3,21.3 L78.0,13.5"/><path class="nx" d="M61.0,39.8 L67.2,35.1 L73.4,30.3 L79.3,25.3 L85.0,20.1"/><path class="nx" d="M61.6,40.4 L68.4,36.6 L73.4,30.4 L80.7,27.2 L85.0,20.0"/><path class="nx" d="M63.0,42.4 L70.5,40.1 L77.5,36.8 L82.8,30.2 L90.5,28.2"/><path class="nx" d="M63.7,43.8 L70.3,39.7 L77.6,36.9 L84.3,33.0 L91.7,30.7"/><path class="nx" d="M64.7,46.8 L72.3,45.6 L79.5,42.3 L87.5,42.4 L94.7,39.3"/><path class="nx" d="M64.8,47.6 L72.6,47.2 L80.3,46.1 L87.7,43.2 L95.4,42.7"/><circle class="nn" cx="96.0" cy="50.5" r="1.1"/><circle class="nn" cx="95.7" cy="55.6" r="1.1"/><circle class="nn" cx="93.6" cy="64.6" r="1.1"/><circle class="nn" cx="91.9" cy="69.0" r="1.1"/><circle class="nn" cx="91.7" cy="69.7" r="1.1"/><circle class="nn" cx="85.1" cy="79.7" r="1.1"/><circle class="nn" cx="84.5" cy="80.5" r="1.1"/><circle class="nn" cx="77.3" cy="87.0" r="1.1"/><circle class="nn" cx="73.5" cy="89.6" r="1.1"/><circle class="nn" cx="69.1" cy="91.9" r="1.1"/><circle class="nn" cx="63.9" cy="93.9" r="1.1"/><circle class="nn" cx="54.3" cy="95.8" r="1.1"/><circle class="nn" cx="47.4" cy="95.9" r="1.1"/><circle class="nn" cx="43.4" cy="95.6" r="1.1"/><circle class="nn" cx="38.3" cy="94.5" r="1.1"/><circle class="nn" cx="30.3" cy="91.6" r="1.1"/><circle class="nn" cx="27.4" cy="90.1" r="1.1"/><circle class="nn" cx="19.0" cy="84.1" r="1.1"/><circle class="nn" cx="16.1" cy="81.2" r="1.1"/><circle class="nn" cx="14.0" cy="78.7" r="1.1"/><circle class="nn" cx="9.1" cy="71.1" r="1.1"/><circle class="nn" cx="6.2" cy="64.3" r="1.1"/><circle class="nn" cx="5.6" cy="62.2" r="1.1"/><circle class="nn" cx="4.2" cy="54.3" r="1.1"/><circle class="nn" cx="4.0" cy="51.6" r="1.1"/><circle class="nn" cx="4.9" cy="40.9" r="1.1"/><circle class="nn" cx="6.0" cy="36.2" r="1.1"/><circle class="nn" cx="6.7" cy="34.3" r="1.1"/><circle class="nn" cx="10.3" cy="26.8" r="1.1"/><circle class="nn" cx="12.8" cy="23.0" r="1.1"/><circle class="nn" cx="16.7" cy="18.2" r="1.1"/><circle class="nn" cx="19.4" cy="15.6" r="1.1"/><circle class="nn" cx="24.1" cy="11.9" r="1.1"/><circle class="nn" cx="31.4" cy="7.9" r="1.1"/><circle class="nn" cx="36.0" cy="6.1" r="1.1"/><circle class="nn" cx="40.7" cy="4.9" r="1.1"/><circle class="nn" cx="50.1" cy="4.0" r="1.1"/><circle class="nn" cx="56.3" cy="4.4" r="1.1"/><circle class="nn" cx="59.4" cy="5.0" r="1.1"/><circle class="nn" cx="66.9" cy="7.2" r="1.1"/><circle class="nn" cx="74.3" cy="10.9" r="1.1"/><circle class="nn" cx="78.0" cy="13.5" r="1.1"/><circle class="nn" cx="85.0" cy="20.1" r="1.1"/><circle class="nn" cx="85.0" cy="20.0" r="1.1"/><circle class="nn" cx="90.5" cy="28.2" r="1.1"/><circle class="nn" cx="91.7" cy="30.7" r="1.1"/><circle class="nn" cx="94.7" cy="39.3" r="1.1"/><circle class="nn" cx="95.4" cy="42.7" r="1.1"/></svg>
+        <span class="triad"></span>
+      </div>
+      <!-- Curved glass dome reflection over the whole thing (static) -->
+      <div class="glass"></div>
+    </div>
+
+    <!--
+      Mark 50 skin. Built from the RENDERED model rather than redrawn in CSS —
+      hand-tracing that geometry never matches, and the render is the real thing.
+
+      Three stacked copies of the same image do the work:
+        .m50-bloom-wide  a wide, soft copy that spills light onto the desktop
+        .m50-art    the render itself, untouched
+        .m50-bloom  the same render blown out and blurred, blended over the top
+
+      That last layer is the trick: screen-blending a brightened blur of the
+      artwork makes the ALREADY-BRIGHT parts (the core, the light bars) glow
+      while the dark plating stays dark — so the glow follows the model's own
+      shapes instead of being a circle stuck behind it. Its opacity rides
+      --level, which is the live microphone level, so the core breathes.
+
+      Only rendered when the skin is active; see hud.css.
+    -->
+    <div id="orb50" class="orb50" title="Click the core or press ⌘⇧J to talk" hidden>
+      <img class="m50-bloom-wide" src="../assets/reactor-mark50.png" alt="" aria-hidden="true" draggable="false" />
+      <img class="m50-art" src="../assets/reactor-mark50.png" alt="" draggable="false" />
+      <img class="m50-bloom" src="../assets/reactor-mark50.png" alt="" aria-hidden="true" draggable="false" />
+      <!-- Invisible click target over the core. Everything outside it drags. -->
+      <div class="m50-hit" title="Click to talk · long-press to type · right-click to stop"></div>
+    </div></body>

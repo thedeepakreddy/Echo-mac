@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { putHandoff, readHandoff, clearHandoff } from "./task-handoff.js";
 import type { OcrLine } from "../tools/vision.js";
 
 /**
@@ -197,25 +199,18 @@ export function drawable(blocks: TranslatedBlock[]): TranslatedBlock[] {
  * boxes out to the model and trusting them to come back intact is a needless
  * way to lose them.
  */
-let pending: TextBlock[] = [];
-let pendingLanguage = "English";
-
-export function stashBlocks(blocks: TextBlock[], language: string) {
-  pending = blocks;
-  pendingLanguage = language;
+export function translationVersion(blocks: TextBlock[], resource = ""): string {
+  return createHash("sha256").update(JSON.stringify([resource, blocks])).digest("hex");
 }
-
-export function pendingBlocks(): TextBlock[] {
-  return pending;
+export function stashBlocks(blocks: TextBlock[], language: string, resourceVersion?: string) {
+  return putHandoff("translation", { blocks, language }, { ttlMs: 120_000, resourceVersion });
 }
-
-export function pendingTarget(): string {
-  return pendingLanguage;
+export function pendingTranslation(id?: string, resourceVersion?: string) {
+  return readHandoff<{ blocks: TextBlock[]; language: string }>("translation", { id, resourceVersion });
 }
-
-export function clearPending() {
-  pending = [];
-}
+export function pendingBlocks(): TextBlock[] { return pendingTranslation()?.value.blocks ?? []; }
+export function pendingTarget(): string { return pendingTranslation()?.value.language ?? "English"; }
+export function clearPending() { clearHandoff("translation"); }
 
 /** Speakable summary of what was put on screen. */
 export function describe(shown: TranslatedBlock[], target: string, total: number): string {

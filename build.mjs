@@ -14,12 +14,21 @@ function buildNativeHelper(name, disabledFeature) {
   const src = `native/${name}.swift`;
   const bin = `native/${name}`;
   if (!existsSync(src)) return;
-  if (existsSync(bin) && statSync(bin).mtimeMs >= statSync(src).mtimeMs) {
+  const plistPath = `native/${name}.plist`;
+  const newest = Math.max(statSync(src).mtimeMs, existsSync(plistPath) ? statSync(plistPath).mtimeMs : 0);
+  if (existsSync(bin) && statSync(bin).mtimeMs >= newest) {
     console.log(`${name} up to date`);
     return;
   }
   try {
-    execFileSync("swiftc", ["-O", src, "-o", bin], { stdio: "inherit" });
+    // A bare binary that touches privacy-guarded frameworks (Speech, the
+    // microphone) is killed outright unless it carries the usage strings an
+    // app would have in Info.plist. native/<name>.plist is embedded when present.
+    const plist = `native/${name}.plist`;
+    const embed = existsSync(plist)
+      ? ["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", plist]
+      : [];
+    execFileSync("swiftc", ["-O", src, ...embed, "-o", bin], { stdio: "inherit" });
     console.log(`compiled native/${name}`);
   } catch (err) {
     console.warn(`${name} compile failed (${disabledFeature} will be unavailable):`, err.message);
@@ -37,6 +46,8 @@ function buildNativeHelpers() {
     visionhelper: "screen OCR and presence",
     facetracker: "eye tracking",
     sonar: "presence sensing",
+    voiceio: "the persistent player and echo-cancelled microphone",
+    speechhelper: "Apple on-device streaming transcription",
   };
   let files = [];
   try {

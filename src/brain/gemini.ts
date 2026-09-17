@@ -9,12 +9,13 @@ import {
   buildSystemPrompt,
   VOICE_TURN_CONTRACT,
 } from "./types.js";
-import type { AudioTurn, SendOptions } from "./types.js";
+import type { AudioTurn, BrainExecutionLimits, SendOptions } from "./types.js";
 import { stripAudioParts, toInlineDataPart } from "../voice/audio-turn.js";
 import { TOOLS, ToolDef } from "../tools/registry.js";
 import { runGated } from "../safety/gate.js";
 import { trimGeminiHistory } from "./history.js";
 import { recordLLM, approxTokens } from "../agent-replay/runtime.js";
+import { resolveToolName } from "./localtools.js";
 import { currentLoop, normalizeGeminiFinish, classifyProviderError } from "../agent-replay/loop-log.js";
 import type { ExitReason } from "../agent-replay/recorder.js";
 import type { JarvisConfig } from "../config.js";
@@ -109,6 +110,54 @@ export function geminiFallbackReason(
   return null;
 }
 
+/**
+ * How much of one tool result is allowed back into the conversation.
+ *
+ * The whole history is re-sent on every iteration, so an un-capped result is
+ * not paid for once — it is paid for again on every remaining step of the task.
+ * One read of something large could therefore end a run by itself, and
+ * `context_overflow` would name the symptom rather than the cause.
+ *
+ * Head and tail rather than a plain truncation: the beginning says what the
+ * thing is, and the end is usually where the error or the total lives.
+ */
+const TOOL_RESULT_BUDGET = 12_000;
+
+function withinBudget(text: string): string {
+  if (typeof text !== "string" || text.length <= TOOL_RESULT_BUDGET) return text;
+  const head = text.slice(0, Math.floor(TOOL_RESULT_BUDGET * 0.7));
+  const tail = text.slice(-Math.floor(TOOL_RESULT_BUDGET * 0.25));
+  const dropped = text.length - head.length - tail.length;
+  return `${head}\n\n[... ${dropped.toLocaleString()} characters withheld to protect the context window. ` +
+    `Narrow the request — a filter, a range, or a more specific query — if you need what is missing ...]\n\n${tail}`;
+}
+
+/**
+ * What to say when the model calls a tool that does not exist.
+ *
+ * "unknown tool" is a dead end: it names no alternative, so the model either
+ * repeats the same call or abandons the step. Naming the near misses turns a
+ * wasted iteration into a corrected one.
+ */
+function unknownToolAdvice(called: string, known: string[]): string {
+  const want = String(called).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const scored = known
+    .map((name) => {
+      const have = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      const shared = want.filter((w) => have.some((h) => h.startsWith(w) || w.startsWith(h))).length;
+      return { name, shared };
+    })
+    .filter((c) => c.shared > 0)
+    .sort((a, b) => b.shared - a.shared)
+    .slice(0, 5)
+    .map((c) => c.name);
+  return scored.length
+    ? `There is no tool called "${called}". The closest tools that do exist are: ${scored.join(", ")}. ` +
+      `Call one of those, or a different tool entirely — do not call "${called}" again.`
+    : `There is no tool called "${called}", and nothing close to it exists. ` +
+      `Choose a different tool from the ones you were given, or answer without one.`;
+}
+
 export class GeminiBrain extends Brain {
   private ai: GoogleGenAI;
   private contents: any[] = [];
@@ -133,7 +182,7 @@ export class GeminiBrain extends Brain {
    */
   private systemPrompt = JARVIS_PERSONA;
 
-  constructor(private cfg: JarvisConfig, apiKey: string) {
+  constructor(private cfg: JarvisConfig, apiKey: string, private readonly limits: BrainExecutionLimits = {}) {
     super();
     this.ai = new GoogleGenAI({ apiKey });
     // The listening instructions are only true when audio is actually attached,
@@ -343,7 +392,7 @@ export class GeminiBrain extends Brain {
       // the user doesn't have to keep saying "finish it".
       let autoContinues = 0;
       let didAnyToolCall = false;
-      const MAX_ITERATIONS = LOOP_CAPS.gemini.maxIterations;
+      const MAX_ITERATIONS = this.limits.maxIterations ?? LOOP_CAPS.gemini.maxIterations;
       const AUTO_CONTINUE_LIMIT = LOOP_CAPS.gemini.autoContinueLimit;
 
       // The cap and the abort flag used to share one `for` condition, so the two
@@ -518,16 +567,34 @@ export class GeminiBrain extends Brain {
         this.emitEvent("status", "acting");
         didAnyToolCall = true;
         const responseParts: any[] = [];
-        for (const call of calls) {
-          const tool = TOOLS.find((t) => t.name === call.name);
+        /**
+         * Run one tool call and return the parts it contributes to the reply.
+         *
+         * Pulled out of the loop so independent calls can be run together. The
+         * parts are returned rather than appended, because the reply has to stay
+         * in the model's own call order however the work was scheduled.
+         */
+        const runOneCall = async (call: any): Promise<any[]> => {
+          const parts: any[] = [];
+          let tool = TOOLS.find((t) => t.name === call.name);
           const mcpInfo = this.mcpTools.get(call.name);
 
+          // A name close enough to be unambiguous is worth honouring rather than
+          // bouncing: the model meant a real tool and spelled it its own way.
+          // Echo already knew how to do this — it was only wired to Ollama.
           if (!tool && !mcpInfo) {
+            const resolved = resolveToolName(call.name);
+            if (resolved) {
+              tool = TOOLS.find((t) => t.name === resolved);
+              if (tool) log?.note("tool.name_resolved", { called: call.name, ran: resolved });
+            }
+          }
+
+          if (!tool && !mcpInfo) {
+            const advice = unknownToolAdvice(call.name, TOOLS.map((t) => t.name).concat([...this.mcpTools.keys()]));
+            log?.note("tool.unknown", { called: call.name });
             this.emitEvent("tool", { name: call.name, summary: call.name });
-            responseParts.push({
-              functionResponse: { name: call.name, response: { error: "unknown tool" } },
-            });
-            continue;
+            return [{ functionResponse: { name: call.name, response: { error: advice } } }];
           }
 
           try {
@@ -567,8 +634,8 @@ export class GeminiBrain extends Brain {
                 workingDir: this.cfg.control.workingDir,
                 emit: (e, p) => this.emitEvent(e as any, p),
               });
-              responseParts.push({
-                functionResponse: { name: call.name, response: { result: out.text ?? "done", status: out.status, data: out.data, error: out.error, verification: out.verification, callId: out.callId } },
+              parts.push({
+                functionResponse: { name: call.name, response: { result: withinBudget(out.text ?? "done"), status: out.status, data: out.data, error: out.error, verification: out.verification, callId: out.callId } },
               });
             } else if (tool) {
               // Through the shared gate, exactly as the other brains are.
@@ -576,11 +643,11 @@ export class GeminiBrain extends Brain {
                 workingDir: this.cfg.control.workingDir,
                 emit: (e, p) => this.emitEvent(e as any, p),
               });
-              responseParts.push({
-                functionResponse: { name: call.name, response: { result: out.text ?? "done", status: out.status, data: out.data, error: out.error, verification: out.verification, callId: out.callId } },
+              parts.push({
+                functionResponse: { name: call.name, response: { result: withinBudget(out.text ?? "done"), status: out.status, data: out.data, error: out.error, verification: out.verification, callId: out.callId } },
               });
               if (out.image) {
-                responseParts.push({
+                parts.push({
                   inlineData: { mimeType: out.image.mimeType, data: out.image.data },
                 });
               }
@@ -588,10 +655,42 @@ export class GeminiBrain extends Brain {
           } catch (err: any) {
             // tool.start / tool.end come from runGated, the one path every brain
             // shares; this only records what the model is told.
-            responseParts.push({
+            parts.push({
               functionResponse: { name: call.name, response: { error: String(err?.message ?? err) } },
             });
           }
+          return parts;
+        };
+
+        /**
+         * Gemini can ask for several tools in one turn, and they were executed
+         * strictly one after another — so four independent observations cost four
+         * round trips of latency for no reason.
+         *
+         * Only the LEADING run of read-only calls is batched. A call that changes
+         * the machine runs alone, and nothing after it is hoisted ahead of it,
+         * because a write can change what a later read would have seen. Read-only
+         * is the tool's own declaration, and observations no longer take an
+         * exclusive lease on the pointer, so a batch cannot contend with itself.
+         */
+        const isObservation = (call: any): boolean => {
+          if (this.mcpTools.has(call.name)) return false; // an outside server may do anything
+          const named = TOOLS.find((t) => t.name === call.name)
+            ?? TOOLS.find((t) => t.name === resolveToolName(call.name));
+          return Boolean(named?.readOnly);
+        };
+        let batched = 0;
+        while (batched < calls.length && isObservation(calls[batched])) batched++;
+
+        if (batched > 1) {
+          log?.note("tool.parallel_batch", { count: batched, names: calls.slice(0, batched).map((c: any) => String(c?.name ?? "?")) });
+          const settled = await Promise.all(calls.slice(0, batched).map((call: any) => runOneCall(call)));
+          for (const parts of settled) responseParts.push(...parts);
+        } else {
+          batched = 0;
+        }
+        for (const call of calls.slice(batched)) {
+          responseParts.push(...(await runOneCall(call)));
         }
         log?.enterState("reflecting", "trimming history");
         this.contents.push({ role: "user", parts: responseParts });

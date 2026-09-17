@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
-import { transcribe } from "./voice/stt.js";
+import { transcribeLocal } from "./voice/stt.js";
 import { matchWakeWord, isNameOnly } from "./voice/wakeword.js";
 
 const run = promisify(execFile);
@@ -87,7 +87,7 @@ for (const c of CASES) {
   let wav = "";
   try {
     wav = await synth(c.spoken);
-    const transcript = await transcribe(wav, cfg);
+    const transcript = await transcribeLocal(wav, cfg); // the wake pass is always local, whatever sttProvider says
     const { matched, command } = matchWakeWord(transcript);
 
     const problems: string[] = [];

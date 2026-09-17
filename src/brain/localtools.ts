@@ -154,7 +154,7 @@ export function resolveToolName(called: string): string | null {
  * crowds out the conversation. These are the ones that matter for spoken
  * commands, and they leave the model a short enough list to choose from.
  */
-const LOCAL_TOOL_NAMES = [
+export const LOCAL_TOOL_NAMES = [
   // seeing
   "screenshot", "read_screen_text", "list_ui_elements", "frontmost_app",
   // pointing and typing
@@ -167,9 +167,14 @@ const LOCAL_TOOL_NAMES = [
   // controlling the Mac from a phone
   "set_remote_password", "open_phone_remote", "close_phone_remote", "phone_remote_status",
   // memory
-  "remember", "recall", "search_my_past",
+  "remember", "recall", "forget", "stop_learning_here", "memory_status", "inspect_memory", "inspect_task", "verify_task", "tool_memory", "search_my_past",
+  "create_skill", "list_skills", "run_skill",
+  // durable delegation and the Result every delegated Agent Task must submit
+  "run_agent_mission", "inspect_agent_mission", "cancel_agent_mission", "submit_agent_result",
   // scan a page and recall it later
   "scan_page", "save_last_scan", "recall_scan",
+  // the world on screen, and what it says
+  "show_osiris", "osiris_layers", "osiris_intel", "osiris_focus",
   // essentials
   "wait", "check_calendar", "undo_last",
 ];

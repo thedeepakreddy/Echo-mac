@@ -1,4 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { writeWav } from "./wav.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import { run } from "../tools/shell.js";
@@ -7,7 +10,13 @@ import { buildVocabulary } from "./vocabulary.js";
 import { getAppPath } from "../utils/appPath.js";
 
 /**
- * Speech-to-text via whisper.cpp.
+ * Speech-to-text, either locally via whisper.cpp or through Sarvam's cloud API.
+ *
+ * whisper.cpp is the default and handles the wake-word pass in every mode, so
+ * room audio that was never addressed to Echo stays on the machine. Sarvam is
+ * opt-in (voice.sttProvider) because it is the only thing here that transcribes
+ * Telugu and the other Indian languages usefully — local whisper is poor at them
+ * even on a multilingual model, and hopeless on a `.en` one.
  *
  * Two paths. The CLI reloads the ~141MB model on every invocation, which
  * measured at ~600ms for a short clip — almost all of it load, not inference.
@@ -22,6 +31,24 @@ let serverReady: Promise<boolean> | null = null;
 
 function serverBinFor(cliPath: string): string {
   return join(dirname(cliPath), "whisper-server");
+}
+
+/** The `-l` value for whisper. Defaults to English, as it always used to be. */
+function whisperLang(cfg: JarvisConfig): string {
+  // On the Sarvam route local whisper only ever runs the wake-word pass, and
+  // the name is an English word however the rest of the sentence is spoken. Keep
+  // that pass in English so the bundled `.en` model stays usable there.
+  if (cfg.voice.sttProvider === "sarvam") return "en";
+  return cfg.voice.sttLanguage || "en";
+}
+
+/**
+ * Is the local model English-only? `.en` builds have no multilingual decoder at
+ * all, so asking one for Telugu yields confident, fluent, invented English
+ * rather than an error — worth saying out loud instead of letting it through.
+ */
+function isEnglishOnlyModel(cfg: JarvisConfig): boolean {
+  return /\.en\.bin$/.test(cfg.voice.sttModel);
 }
 
 async function waitForServer(port: number, timeoutMs = 30000): Promise<boolean> {
@@ -58,7 +85,7 @@ function ensureServer(cfg: JarvisConfig): Promise<boolean> {
         [
           "-m", cfg.voice.sttModel,
           "--port", String(serverPort),
-          "-l", "en",
+          "-l", whisperLang(cfg),
           "-nt",
           // Bias decoding toward the words this user actually says. Measured on
           // real command audio this cut word error from 6.5% to 4.8% and fixed
@@ -141,7 +168,7 @@ async function viaServer(wavPath: string): Promise<string | null> {
 async function viaCli(wavPath: string, cfg: JarvisConfig): Promise<string> {
   const { stdout, stderr, code } = await run(
     cfg.voice.whisperBin,
-    ["-m", cfg.voice.sttModel, "-f", wavPath, "-l", "en", "-nt", "-np"],
+    ["-m", cfg.voice.sttModel, "-f", wavPath, "-l", whisperLang(cfg), "-nt", "-np"],
     60000
   );
   if (code !== 0 && !stdout.trim()) {
@@ -150,11 +177,48 @@ async function viaCli(wavPath: string, cfg: JarvisConfig): Promise<string> {
   return clean(stdout);
 }
 
-/** Transcribe a WAV file to text using the local whisper.cpp model. */
-export async function transcribe(wavPath: string, cfg: JarvisConfig): Promise<string> {
+/**
+ * Sarvam wants a region-qualified code; the config carries a bare one. Anything
+ * already qualified ("te-IN") passes through untouched.
+ */
+function sarvamLang(cfg: JarvisConfig): string {
+  const lang = (cfg.voice.sttLanguage || "en").toLowerCase();
+  if (lang === "auto") return "unknown"; // Sarvam's spelling for detect-it-yourself
+  return lang.includes("-") ? lang : `${lang}-IN`;
+}
+
+async function viaSarvam(wavPath: string, cfg: JarvisConfig): Promise<string> {
+  const key = process.env.SARVAM_API_KEY;
+  if (!key) throw new Error("voice.sttProvider is 'sarvam' but SARVAM_API_KEY is not set.");
+
+  const form = new FormData();
+  form.append("file", new Blob([readFileSync(wavPath)]), "audio.wav");
+  form.append("model", "saarika:v2.5");
+  form.append("language_code", sarvamLang(cfg));
+
+  const res = await fetch("https://api.sarvam.ai/speech-to-text", {
+    method: "POST",
+    headers: { "api-subscription-key": key },
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`sarvam stt failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  }
+  const data: any = await res.json();
+  return clean(String(data?.transcript ?? ""));
+}
+
+/** Transcribe a WAV file with the local whisper.cpp model, ignoring sttProvider. */
+export async function transcribeLocal(wavPath: string, cfg: JarvisConfig): Promise<string> {
   if (!existsSync(cfg.voice.sttModel)) {
     throw new Error(
       `Whisper model not found at ${cfg.voice.sttModel}. Download it (see README) or fix voice.sttModel in config.json.`
+    );
+  }
+  if (whisperLang(cfg) !== "en" && isEnglishOnlyModel(cfg)) {
+    throw new Error(
+      `voice.sttLanguage is "${whisperLang(cfg)}" but ${cfg.voice.sttModel} is an English-only model. ` +
+        `Point voice.sttModel at a multilingual build (one without ".en"), or set voice.sttProvider to "sarvam".`
     );
   }
 
@@ -163,6 +227,28 @@ export async function transcribe(wavPath: string, cfg: JarvisConfig): Promise<st
     if (text !== null) return text;
   }
   return viaCli(wavPath, cfg);
+}
+
+/**
+ * Transcribe raw 16 kHz frames with the local model — for the wake-word
+ * verifier, which holds the last second of audio in memory rather than on disk.
+ */
+export async function transcribeFrames(frames: Int16Array[], cfg: JarvisConfig): Promise<string> {
+  const path = join(tmpdir(), `echo-verify-${process.pid}-${Date.now()}.wav`);
+  await writeWav(frames, path, 16000);
+  try {
+    return await transcribeLocal(path, cfg);
+  } finally {
+    unlink(path).catch(() => {});
+  }
+}
+
+/** Transcribe a WAV file using whichever engine voice.sttProvider selects. */
+export async function transcribe(wavPath: string, cfg: JarvisConfig): Promise<string> {
+  if (cfg.voice.sttProvider === "sarvam") return viaSarvam(wavPath, cfg);
+  // "apple" streams while the user speaks (stt-stream.ts); for a file there is
+  // nothing on-device to call, so whisper reads it.
+  return transcribeLocal(wavPath, cfg);
 }
 
 /** Start the model loading now so the first command isn't slowed by it. */

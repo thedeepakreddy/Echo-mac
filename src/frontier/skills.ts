@@ -25,10 +25,39 @@ export interface SkillStep {
 }
 
 export interface Skill {
+  /**
+   * Stable identity for this workflow, independent of its display name.
+   *
+   * Procedural memory tracks a skill across renames and edits, and a deletion
+   * has to be able to reach every record derived from it. A name cannot do
+   * either: renaming "deploy" to "ship it" would silently orphan its history,
+   * and two people's "deploy" are not the same procedure. Older files have no
+   * ID, so readers derive one from the name rather than rewriting the file.
+   */
+  procedureId: string;
+  /** Bumped whenever the steps change, so a verified run is tied to what ran. */
+  version: number;
   name: string;
   description: string;
   steps: SkillStep[];
   createdAt: number;
+  updatedAt?: number;
+  /** Whether the user taught this directly, or Echo proposed it from a run. */
+  taughtByUser?: boolean;
+}
+
+/** Fold a name into the ID shape used for legacy rows and for new skills alike. */
+export function procedureIdFor(name: string): string {
+  return (name ?? "").trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "skill";
+}
+
+/** Fill in identity/version for a skill loaded from an older file, without rewriting it. */
+function withIdentity(raw: any): Skill {
+  return {
+    ...raw,
+    procedureId: typeof raw.procedureId === "string" && raw.procedureId ? raw.procedureId : procedureIdFor(raw.name),
+    version: Number.isInteger(raw.version) && raw.version > 0 ? raw.version : 1,
+  };
 }
 
 /**
@@ -71,10 +100,14 @@ export function validateSkill(
   return {
     ok: true,
     skill: {
+      procedureId: procedureIdFor(name),
+      version: 1,
       name,
       description: typeof raw.description === "string" ? raw.description : "",
       steps,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
+      taughtByUser: true,
     },
   };
 }
@@ -109,19 +142,36 @@ export function loadSkills(base?: string): Skill[] {
   if (!existsSync(path)) return [];
   try {
     const arr = JSON.parse(readFileSync(path, "utf8"));
-    return Array.isArray(arr) ? arr.filter((s) => s?.name && Array.isArray(s.steps)) : [];
+    return Array.isArray(arr) ? arr.filter((s) => s?.name && Array.isArray(s.steps)).map(withIdentity) : [];
   } catch {
     return [];
   }
 }
 
-/** Save a skill, replacing any existing one with the same name. */
+/**
+ * Save a skill, replacing any existing one with the same name.
+ *
+ * Replacing keeps the previous row's identity and creation date and bumps the
+ * version when the steps actually changed. Procedural memory scores a workflow
+ * on verified runs of a *specific* version; letting an edit inherit the old
+ * version's record would credit new steps with an old workflow's successes.
+ */
 export function saveSkill(skill: Skill, base?: string): void {
   const path = skillsFile(base);
   const dir = join(path, "..");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const all = loadSkills(base).filter((s) => s.name.toLowerCase() !== skill.name.toLowerCase());
-  all.push(skill);
+  const existing = loadSkills(base);
+  const prior = existing.find((s) => s.name.toLowerCase() === skill.name.toLowerCase());
+  const changed = !prior || JSON.stringify(prior.steps) !== JSON.stringify(skill.steps);
+  const row: Skill = {
+    ...skill,
+    procedureId: prior?.procedureId ?? skill.procedureId ?? procedureIdFor(skill.name),
+    version: prior ? prior.version + (changed ? 1 : 0) : skill.version || 1,
+    createdAt: prior?.createdAt ?? skill.createdAt,
+    updatedAt: Date.now(),
+  };
+  const all = existing.filter((s) => s.name.toLowerCase() !== skill.name.toLowerCase());
+  all.push(row);
   writeFileSync(path, JSON.stringify(all, null, 2), { mode: 0o600 });
 }
 

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Echo — Neural Core</title>
+  <link rel="stylesheet" href="neural.css" />
+</head>
+<body>
+  <div id="panel">
+    <div id="bar">
+      <span class="dot"></span>
+      <span class="ttl">NEURAL CORE · COGNITIVE SCHEMA</span>
+      <span class="sp"></span>
+      <button id="close" title="Close (Esc)">✕</button>
+    </div>
+    <div id="stage">
+      <canvas id="core"></canvas>
+      <div class="hud">
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <div class="read l">
+          <div class="d">DATA NODES</div><div><b id="nodes">0</b> active</div>
+          <div class="d" style="margin-top:6px">SYNAPSES</div><div id="syn">0</div>
+        </div>
+        <div class="read r">
+          <div class="d">CORE STATE</div><div><b>STABLE</b></div>
+          <div class="d" style="margin-top:6px">CORE TEMP</div><div id="temp">-- MK</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="neural.js"></script>
+</body>
+</html>

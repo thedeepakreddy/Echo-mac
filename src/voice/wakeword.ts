@@ -29,6 +29,16 @@ const VARIANTS = new Set([
 
 const PREFIXES = ["hey", "okay", "ok", "hello", "yo", "hi"];
 
+/**
+ * How the name comes back when the utterance was transcribed in Telugu script.
+ *
+ * Everything below this line works on [a-z] — `strip` throws the rest away — so
+ * a Telugu transcript reduces to empty tokens and the name can never match. The
+ * spellings are romanised back to "echo" before any of that runs. Sarvam
+ * rendered "Echo" as ఎకో in testing; the others are the obvious near-misses.
+ */
+const SCRIPT_VARIANTS = /[\u0C0E\u0C0F]\u0C15\u0C4B|[\u0C0E\u0C0F]\u0C16\u0C4B|[\u0C0E\u0C0F]\u0C15\u0C4D\u0C15\u0C4B/g;
+
 const strip = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
 
 /** Levenshtein distance, capped work for the short strings we compare. */
@@ -96,6 +106,10 @@ export function matchWakeWord(transcript: string): WakeMatch {
   
   // Normalize Whisper mishearings that span multiple tokens
   text = text.replace(/\bi go\b/gi, "echo");
+
+  // Romanise the name out of a non-Latin transcript so the matching below sees
+  // it. Only the name is rewritten — the command keeps its original script.
+  text = text.replace(SCRIPT_VARIANTS, " echo ").replace(/\s+/g, " ").trim();
   
   if (!text) return { matched: false, command: "" };
 

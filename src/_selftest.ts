@@ -5,6 +5,7 @@ import { GeminiBrain } from "./brain/gemini.js";
 import { getScreenInfo, captureScreen } from "./tools/computer-actions.js";
 import { transcribe, stopSttServer } from "./voice/stt.js";
 import { loadConfig } from "./config.js";
+import { loadEnv } from "./env.js";
 import { join } from "node:path";
 
 async function main() {
@@ -61,9 +62,13 @@ async function main() {
     fail(`capture failed (likely a permission prompt): ${e.message}`);
   }
 
-  console.log("5) Whisper STT on the bundled sample (jfk.wav)");
+  console.log("5) STT on the bundled sample (jfk.wav)");
   try {
     const cfg = loadConfig(root);
+    // A cloud sttProvider needs its key, and the app itself only loads .env at
+    // startup — without this the check fails on a missing key rather than on
+    // anything about speech.
+    loadEnv(root);
     const sample = "/opt/homebrew/share/whisper-cpp/jfk.wav";
     const text = await transcribe(sample, cfg);
     if (/country/i.test(text)) pass(`transcribed: "${text.slice(0, 60)}…"`);

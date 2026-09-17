@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Echo — Osiris</title>
+  <link rel="stylesheet" href="osiris.css" />
+</head>
+<body>
+  <!-- Echo chrome around the live Osiris grid -->
+  <div id="panel">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+
+    <!-- Draggable title bar: the window is frameless -->
+    <header id="bar">
+      <span class="live"><span class="live-dot"></span>LIVE</span>
+      <span class="title">OSIRIS · GLOBAL INTELLIGENCE GRID</span>
+      <span id="origin" class="origin"></span>
+      <span class="spacer"></span>
+      <button id="pin" title="Keep above other windows">⇧</button>
+      <button id="reload" title="Reconnect">⟳</button>
+      <button id="close" title="Close">✕</button>
+    </header>
+
+    <!-- Stage: the loader sits above the webview until the grid is ready -->
+    <div id="stage">
+      <div id="retune"></div>
+      <div id="loading">
+        <div class="ring"></div>
+        <div class="ldr-text">ESTABLISHING INTELLIGENCE LINK</div>
+        <div class="ldr-sub" id="ldrsub">contacting the grid…</div>
+      </div>
+      <!-- src is set from the query string by osiris.js; a partition of its own
+           keeps the grid's session out of every other webview Echo hosts. -->
+      <webview
+        id="feed"
+        allowpopups="false"
+        partition="persist:osiris"
+      ></webview>
+    </div>
+  </div>
+
+  <script src="osiris.js"></script>
+</body>
+</html>

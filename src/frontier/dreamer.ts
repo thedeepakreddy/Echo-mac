@@ -88,7 +88,10 @@ async function startDreaming() {
 
   try {
     const cfg = loadConfig(process.cwd());
-    activeBrain = createBrain(cfg).brain;
+    activeBrain = createBrain(cfg, {
+      identity: { id: "echo-rehearsal", name: "Echo Rehearsal", kind: "rehearsal" },
+      autoResume: false,
+    }).brain;
     activeBrain.on("text", (t: string) => console.log(`[dreamer] ${t.slice(0, 100)}`));
     activeBrain.on("turnEnd", () => void endDream());
     activeBrain.on("error", () => void endDream());

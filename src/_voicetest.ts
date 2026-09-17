@@ -13,7 +13,7 @@ console.log("\nVoice understanding\n");
 // ---- vocabulary ----------------------------------------------------------
 console.log("  vocabulary hint");
 const vocab = buildVocabulary(process.cwd());
-ok(vocab.includes("Jarvis"), "the wake word is always included");
+ok(vocab.includes("Echo") && vocab.startsWith("Echo "), "the wake word is always included, and leads");
 ok(/screenshot|brightness|workflow/.test(vocab), "command verbs are included");
 ok(vocab.length > 80, "the hint has real content");
 ok(vocab.length < 1400, "but stays short enough not to crowd out the audio");

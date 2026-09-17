@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sarvam": {
+      "command": "/Users/thedeepakreddy/.local/bin/uvx",
+      "args": ["sarvam-mcp"],
+      "env": {
+        "SARVAM_API_KEY": "sk_yi3osl3a_brxCMn7OZ0pvTJGiLS2q4RkC"
+      }
+    }
+  }
+}

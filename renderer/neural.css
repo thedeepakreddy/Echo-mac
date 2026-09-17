@@ -1,0 +1,37 @@
+/* Echo chrome around the neural-core visual. Solid dark window (no transparency). */
+:root { --glow: #59f0ff; --panel: #05080e; }
+* { margin: 0; box-sizing: border-box; user-select: none; }
+html, body { width: 100%; height: 100%; background: #03050a; overflow: hidden;
+  font-family: ui-monospace, "SF Mono", "Menlo", monospace; }
+
+#panel { position: absolute; inset: 0; background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--glow) 26%, transparent);
+  display: flex; flex-direction: column; overflow: hidden; }
+
+#bar { -webkit-app-region: drag; display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid #16323d;
+  background: linear-gradient(180deg, rgba(20,40,52,.5), rgba(6,12,20,.5)); }
+#bar .dot { width: 8px; height: 8px; border-radius: 50%; background: #ffb95a;
+  box-shadow: 0 0 8px #ffb95a; }
+#bar .ttl { color: var(--glow); letter-spacing: .26em; font-size: 12px;
+  text-shadow: 0 0 8px var(--glow); }
+#bar .sp { flex: 1; }
+#bar button { -webkit-app-region: no-drag; background: rgba(12,24,30,.8);
+  color: #9fd4e0; border: 1px solid #234; border-radius: 6px; width: 26px; height: 22px;
+  cursor: pointer; font-size: 13px; }
+#bar button:hover { background: color-mix(in srgb, var(--glow) 20%, transparent); color: #eafcff; }
+
+#stage { position: relative; flex: 1; }
+#core { display: block; width: 100%; height: 100%; }
+
+/* HUD overlay on the canvas */
+.hud { position: absolute; inset: 0; pointer-events: none; }
+.corner { position: absolute; width: 30px; height: 30px; border: 2px solid var(--glow); opacity: .7; }
+.corner.tl { top: 14px; left: 14px; border-right: 0; border-bottom: 0; }
+.corner.tr { top: 14px; right: 14px; border-left: 0; border-bottom: 0; }
+.corner.bl { bottom: 14px; left: 14px; border-right: 0; border-top: 0; }
+.corner.br { bottom: 14px; right: 14px; border-left: 0; border-top: 0; }
+.read { position: absolute; color: var(--glow); font-size: 11px; line-height: 1.9; opacity: .9; }
+.read.l { left: 26px; bottom: 24px; }
+.read.r { right: 26px; bottom: 24px; text-align: right; }
+.read .d { color: #5d7f8a; } .read b { color: #eafcff; font-weight: 600; }

@@ -1,14 +1,15 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { dataRoot } from "./paths.js";
 
 /**
  * Persistent memory: what Jarvis knows across restarts.
  *
- * Plain JSONL in ~/.jarvis/memory so it stays outside your repos, survives a
- * reinstall, and can be read or deleted by hand — this is a long-lived record of
- * your work, so it must never be an opaque blob. It records what you SAID and
- * what Jarvis DID; screen contents are deliberately never stored.
+ * Plain JSONL in Echo's user-data root so it stays outside your repos, survives
+ * a reinstall, and can be read or deleted by hand. This is a compatibility
+ * store only: Memory OS imports it once with legacy provenance and handles new
+ * durable memories. It records what you SAID and what Jarvis DID; screen
+ * contents are deliberately never stored.
  *
  * Append-only with tombstones. Reads are synchronous because the file is small
  * and local, and the brain needs recalled context before its first turn.
@@ -32,19 +33,22 @@ interface Tombstone {
 
 type Line = MemoryRecord | Tombstone;
 
-const DIR = join(homedir(), ".jarvis", "memory");
-const FILE = join(DIR, "memories.jsonl");
+/** Resolve lazily so portable/profiled runs honor ECHO_DATA_ROOT. */
+const dir = () => process.env.JARVIS_MEMORY_DIR?.trim() || join(dataRoot(), "memory");
+const file = () => join(dir(), "memories.jsonl");
 
 export const GLOBAL = "global";
 
 function ensureDir() {
-  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
+  const target = dir();
+  if (!existsSync(target)) mkdirSync(target, { recursive: true, mode: 0o700 });
 }
 
 function parseLines(): Line[] {
-  if (!existsSync(FILE)) return [];
+  const target = file();
+  if (!existsSync(target)) return [];
   const out: Line[] = [];
-  for (const line of readFileSync(FILE, "utf8").split("\n")) {
+  for (const line of readFileSync(target, "utf8").split("\n")) {
     const t = line.trim();
     if (!t) continue;
     try {
@@ -80,7 +84,7 @@ export function remember(
     project: project || GLOBAL,
     text: text.trim(),
   };
-  appendFileSync(FILE, JSON.stringify(rec) + "\n");
+  appendFileSync(file(), JSON.stringify(rec) + "\n", "utf8");
   return rec;
 }
 
@@ -97,7 +101,7 @@ export function forget(opts: { id?: string; query?: string }): number {
   ensureDir();
   const stamp = new Date().toISOString();
   appendFileSync(
-    FILE,
+    file(),
     targets.map((t) => JSON.stringify({ id: `t-${stamp}`, forget: t.id })).join("\n") + "\n"
   );
   return targets.length;
@@ -132,10 +136,11 @@ export function search(
 
 /** Rewrite the file without tombstoned records. Safe to call at startup. */
 export function compact(): void {
-  if (!existsSync(FILE)) return;
+  const target = file();
+  if (!existsSync(target)) return;
   const live = all();
   ensureDir();
-  writeFileSync(FILE, live.map((r) => JSON.stringify(r)).join("\n") + (live.length ? "\n" : ""));
+  writeFileSync(target, live.map((r) => JSON.stringify(r)).join("\n") + (live.length ? "\n" : ""), "utf8");
 }
 
 export function stats(): { count: number; projects: string[]; file: string } {
@@ -143,8 +148,9 @@ export function stats(): { count: number; projects: string[]; file: string } {
   return {
     count: live.length,
     projects: [...new Set(live.map((r) => r.project))],
-    file: FILE,
+    file: file(),
   };
 }
 
-export const memoryFile = FILE;
+/** Compatibility export for callers which inspect the current default store. */
+export const memoryFile = file();

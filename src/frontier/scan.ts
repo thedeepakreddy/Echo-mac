@@ -1,12 +1,16 @@
 import { execFile } from "node:child_process";
 import {
-  existsSync, mkdirSync, appendFileSync, readFileSync, copyFileSync, writeFileSync, statSync,
+  existsSync, mkdirSync, appendFileSync, readFileSync, copyFileSync, writeFileSync, statSync, rmSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, basename, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { embed, cosine } from "./diskindex.js";
+import { dataRoot, atomicWrite } from "../memory/paths.js";
+import { captureAllowed, deletionEpoch } from "../memory/capture-policy.js";
+import { owningTaskId } from "./task-handoff.js";
+import { scrubSecrets } from "../safety/redact.js";
 
 /**
  * "Scan this page."
@@ -44,6 +48,8 @@ export interface Scan {
   saved?: string;
   /** Inline embedding for recall. Absent when the model was unavailable. */
   vector?: number[];
+  taskId?: string;
+  sourceVersion?: string;
 }
 
 /** A scan without the heavy vector — what recall hands back. */
@@ -166,7 +172,7 @@ export function saveStrategy(scan: Pick<Scan, "kind" | "sourcePath" | "shot">): 
 
 // ---- storage --------------------------------------------------------------
 
-export function scanRoot(base: string = join(homedir(), ".jarvis")): string {
+export function scanRoot(base: string = dataRoot()): string {
   return join(base, "scans");
 }
 function recordPath(base?: string): string {
@@ -213,7 +219,7 @@ export function updateScan(id: string, patch: Partial<Scan>, base?: string): boo
   if (i < 0) return false;
   scans[i] = { ...scans[i], ...patch };
   ensureDirs(base);
-  writeFileSync(recordPath(base), scans.map((s) => JSON.stringify(s)).join("\n") + "\n", { mode: 0o600 });
+  atomicWrite(recordPath(base), scans.map((s) => JSON.stringify(s)).join("\n") + "\n");
   return true;
 }
 
@@ -410,6 +416,9 @@ export interface CaptureInput {
  * being off.
  */
 export async function commitScan(input: CaptureInput, base?: string): Promise<Scan> {
+  if (!captureAllowed()) throw new Error("Persistent scans are disabled while a private task is active.");
+  const epoch = deletionEpoch();
+  input = { ...input, text: scrubSecrets(input.text), title: scrubSecrets(input.title) };
   const id = uid();
   const kind = detectKind(input.text, input.app, input.title);
   const sourcePath = await resolveSourcePath().catch(() => undefined);
@@ -433,6 +442,12 @@ export async function commitScan(input: CaptureInput, base?: string): Promise<Sc
     shot,
     vector,
   };
+  if (!captureAllowed() || epoch !== deletionEpoch()) {
+    if (shot) { try { rmSync(join(shotsDir(base), shot), { force: true }); } catch {} }
+    throw new Error("Capture discarded because privacy or deletion state changed.");
+  }
+  scan.taskId = owningTaskId();
+  scan.sourceVersion = sourcePath && existsSync(sourcePath) ? `${statSync(sourcePath).mtimeMs}:${statSync(sourcePath).size}` : undefined;
   saveScan(scan, base);
   return scan;
 }
@@ -465,6 +480,8 @@ export async function saveScanToDesktop(scan: Scan, base?: string): Promise<stri
   let dest = uniqueDestination(join(desktop, suggestFilename(scan)));
 
   if (strategy === "file" && scan.sourcePath && existsSync(scan.sourcePath)) {
+    const info = statSync(scan.sourcePath);
+    if (scan.sourceVersion && scan.sourceVersion !== `${info.mtimeMs}:${info.size}`) throw new Error("The source file changed after the scan. Scan it again before saving the current file.");
     copyFileSync(scan.sourcePath, dest);
   } else if (strategy === "image" && scan.shot) {
     const shotPath = join(shotsDir(base), scan.shot);

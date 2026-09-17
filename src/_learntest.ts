@@ -16,6 +16,7 @@ import {
   recordStep,
   finishTurn,
   labelPrevious,
+  flushTrajectory,
   recording,
   datasetStats,
   describeStats,
@@ -131,6 +132,31 @@ ok(labels.length === 1, "one label row was appended");
 ok((labels[0] as any).outcome === "success", "with the outcome");
 ok(steps().length === 2, "and the step rows were left untouched");
 
+console.log("  incomplete or failed work cannot become a success later");
+startTurn("start but do not finish", "claude");
+recordStep(act("open_app", { name: "Notes" }));
+await flushTrajectory();
+const interruptedTurn = steps().at(-1)?.turn;
+startTurn("a replacement request", "claude");
+recordStep(act("open_app", { name: "Mail" }));
+finishTurn("success", "replacement completed");
+await flushTrajectory();
+ok(
+  rows().some((r) => r.type === "label" && r.turn === interruptedTurn && r.outcome === "rejected"),
+  "a superseded task is rejected instead of falsely marked successful"
+);
+
+startTurn("a handler crashes", "claude");
+recordStep({ ...act("open_app", { name: "Broken" }), succeeded: false });
+await flushTrajectory();
+const failedTurn = steps().at(-1)?.turn;
+finishTurn("success", "brain stopped normally");
+await flushTrajectory();
+ok(
+  rows().some((r) => r.type === "label" && r.turn === failedTurn && r.outcome === "failure"),
+  "a handler failure overrides a normal turn-end success"
+);
+
 console.log("  a refused action is kept as a negative example");
 startTurn("delete everything", "claude");
 recordStep(act("run_terminal_command", { command: "rm -rf ~/Documents" }, false));
@@ -197,6 +223,16 @@ await wait(40);
 const capped = steps().filter((r) => r.command === "loop forever");
 ok(capped.length === 5, `capped at maxStepsPerTurn (got ${capped.length})`);
 finishTurn("failure", "runaway");
+
+startTurn("a capped task that appears to finish", "claude");
+for (let i = 0; i < 6; i++) recordStep(act("click", { x: i, y: i }));
+const cappedTurn = steps().at(-1)?.turn;
+finishTurn("success", "brain stopped normally");
+await wait(30);
+ok(
+  rows().some((r) => r.type === "label" && r.turn === cappedTurn && r.outcome === "failure"),
+  "a capped recording is never exported as a full success"
+);
 
 console.log("  disabling it stops recording entirely");
 configureLearning({ enabled: false });

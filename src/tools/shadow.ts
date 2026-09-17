@@ -8,20 +8,30 @@ export let isShadowModeActive = false;
 
 const SUPPORTED_IDES = ["Code", "Cursor", "Xcode", "Terminal", "iTerm2", "WebStorm"];
 
-export function startShadowMode(tts: Tts) {
+/**
+ * @param intervalSeconds how often to read the screen. The original 15s was far
+ * too hot: each tick is a full-screen OCR, and with this running permanently the
+ * vision helper sat near 90% CPU and the machine's load average passed 14. A
+ * pause worth interrupting lasts longer than a minute anyway, so the slower poll
+ * costs nothing real.
+ */
+export function startShadowMode(tts: Tts, intervalSeconds = 60) {
   if (shadowInterval) return;
   isShadowModeActive = true;
-  
+  const period = Math.max(20, intervalSeconds) * 1000;
+
   shadowInterval = setInterval(async () => {
     if (!isShadowModeActive) return;
-    
+
     try {
+      // Check the cheap thing FIRST. Reading the whole screen and then finding
+      // out the user is not even in an editor was the bulk of the wasted work.
       const appName = await frontmostApp();
       if (!SUPPORTED_IDES.includes(appName)) return;
-      
+
       const r = await ocr("fast");
       if (r.error || !r.lines.length) return;
-      
+
       const screenText = r.lines.map(l => l.text).join("\n");
       
       const prompt = `You are a Shadow Pair Programmer watching the user code. The user has paused for 15 seconds. Look at the text on their screen:
@@ -62,7 +72,7 @@ If YES, output a 1-sentence plan of how to finish the code, followed by the exac
     } catch (e) {
       // Silently fail if offline or OCR fails
     }
-  }, 15000);
+  }, period);
 }
 
 export function stopShadowMode() {

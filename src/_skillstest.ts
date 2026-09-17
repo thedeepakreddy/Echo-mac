@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  validateSkill, screenPlan, saveSkill, loadSkills, getSkill, deleteSkill, describeSkills,
+  validateSkill, screenPlan, saveSkill, loadSkills, getSkill, deleteSkill, describeSkills, procedureIdFor,
   type Skill,
 } from "./frontier/skills.js";
 
@@ -51,7 +51,7 @@ console.log("  bad input is refused");
 console.log("  a risky step makes the skill confirm, not auto-run");
 {
   const skill: Skill = {
-    name: "cleanup", description: "", createdAt: 0,
+    procedureId: "cleanup", version: 1, name: "cleanup", description: "", createdAt: 0,
     steps: [{ tool: "screenshot" }, { tool: "run_terminal_command", args: { command: "rm -rf ~/tmp" } }],
   };
   const tierOf = (tool: string) => (tool === "run_terminal_command" ? "high" : "low");
@@ -59,14 +59,14 @@ console.log("  a risky step makes the skill confirm, not auto-run");
   ok(!screen.autoRunnable, "a skill containing a high-risk step is not auto-runnable");
   ok(screen.highSteps.includes(2), "and it points at the risky step (2)");
 
-  const safe: Skill = { name: "look", description: "", createdAt: 0, steps: [{ tool: "screenshot" }, { tool: "read_screen_text" }] };
+  const safe: Skill = { procedureId: "look", version: 1, name: "look", description: "", createdAt: 0, steps: [{ tool: "screenshot" }, { tool: "read_screen_text" }] };
   ok(screenPlan(safe, () => "low").autoRunnable, "an all-safe skill is auto-runnable");
 }
 
 console.log("  saving, loading, replacing, deleting");
 {
   const root = newRoot();
-  const mk = (name: string): Skill => ({ name, description: "d", createdAt: Date.now(), steps: [{ tool: "screenshot" }] });
+  const mk = (name: string): Skill => ({ procedureId: procedureIdFor(name), version: 1, name, description: "d", createdAt: Date.now(), steps: [{ tool: "screenshot" }] });
   saveSkill(mk("alpha"), root);
   saveSkill(mk("beta"), root);
   ok(loadSkills(root).length === 2, "two skills saved");
@@ -75,6 +75,17 @@ console.log("  saving, loading, replacing, deleting");
   saveSkill({ ...mk("alpha"), description: "updated" }, root);
   ok(loadSkills(root).length === 2, "re-saving a name replaces, not duplicates");
   ok(getSkill("alpha", root)?.description === "updated", "with the new content");
+
+  // Procedural memory keys a workflow's verified-run history to an exact
+  // version. Editing the steps must therefore bump it; editing only the
+  // description must not, or every save would discard the run history.
+  const beforeEdit = getSkill("alpha", root)!;
+  ok(beforeEdit.version === 1, "a re-save that changed no step keeps version 1");
+  saveSkill({ ...mk("alpha"), steps: [{ tool: "screenshot" }, { tool: "read_screen_text" }] }, root);
+  const afterEdit = getSkill("alpha", root)!;
+  ok(afterEdit.version === 2, "changing the steps bumps the version");
+  ok(afterEdit.procedureId === beforeEdit.procedureId, "and the workflow keeps its identity across the edit");
+  ok(afterEdit.createdAt === beforeEdit.createdAt, "the original creation date survives an edit");
 
   ok(deleteSkill("beta", root) === true, "delete reports success");
   ok(loadSkills(root).length === 1 && !getSkill("beta", root), "and it's gone");

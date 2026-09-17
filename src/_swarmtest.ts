@@ -37,8 +37,11 @@ console.log("  spawning tracks a clone and briefs it");
   ok(r.ok && !!r.name, `spawn returns a name (${r.name})`);
   ok(sw.count() === 1, "one clone is tracked");
   ok(/pricing/.test(brains[0].sent()), "the goal is in the clone's briefing");
-  ok(/remember/i.test(brains[0].sent()), "and it's told to save a summary with remember");
+  ok(/submit_agent_result/.test(brains[0].sent()), "and it's required to submit a structured Result");
   ok(broadcasts >= 1, "the roster was broadcast to the UI");
+  ok(sw.send(r.name!, "send an update"), "the named clone accepts a direct message");
+  ok(/send an update/.test(brains[0].sent()), "the message reaches that clone's brain");
+  ok(sw.updateProgress(r.name!, "halfway"), "progress updates resolve by the same durable name");
 }
 
 console.log("  a finished clone is cleaned up");
@@ -57,7 +60,9 @@ console.log("  a finished clone is cleaned up");
   const deps = { makeBrain: () => { const b = fakeBrain(); brains.push(b); return b; }, broadcast: () => {} };
   sw.spawn("task", deps);
   brains[0].fire("error");
-  ok(sw.count() === 0, "a failed clone is cleaned up too");
+  ok(sw.count() === 1, "an error alone is not mistaken for a terminal Result");
+  brains[0].fire("turnEnd");
+  ok(sw.count() === 0, "a failed clone is cleaned up when its turn actually ends");
 }
 
 console.log("  the concurrency cap protects the one mouse");
@@ -90,6 +95,40 @@ console.log("  bad input is refused, not crashed");
   ok(!sw.spawn("", deps).ok, "empty goal refused");
   ok(!sw.spawn("   ", deps).ok, "whitespace goal refused");
   ok(sw.count() === 0, "nothing was tracked for a refused spawn");
+}
+
+console.log("  an interrupted named clone can be rebuilt from its checkpoint");
+{
+  const sw = new SwarmManager();
+  let resumed = false;
+  let identityName = "";
+  const brain = fakeBrain() as ReturnType<typeof fakeBrain> & { recoverFromCheckpoint: (checkpoint: any) => boolean };
+  brain.recoverFromCheckpoint = (checkpoint) => {
+    resumed = checkpoint.originalPrompt === "unfinished clone task";
+    return true;
+  };
+  const checkpoint: any = {
+    version: 1,
+    taskId: "task-1",
+    actor: { id: "clone-restart", name: "Echo Clone 12", kind: "clone" },
+    originalPrompt: "unfinished clone task",
+    restartable: true,
+    status: "running",
+    recoveryAttempts: 0,
+    maxRecoveryAttempts: 3,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    lastRunId: "old-run",
+    runDirs: ["/tmp/old-run"],
+    actions: [],
+  };
+  const recovered = sw.recover(checkpoint, {
+    makeBrain: (identity) => { identityName = identity.name; return brain; },
+    broadcast: () => {},
+  });
+  ok(recovered && resumed, "the persisted task is handed to a fresh brain");
+  ok(identityName === "Echo Clone 12", "the clone keeps its original name after restart");
+  ok(sw.list()[0]?.progress.includes("recovering"), "the HUD roster shows that it is recovering");
 }
 
 console.log(`\n${pass}/${pass + fail} swarm checks passed\n`);

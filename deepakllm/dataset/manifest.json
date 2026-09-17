@@ -1,17 +1,18 @@
 {
-  "generatedAt": "2026-07-27T03:49:21.592Z",
-  "examples": 829,
-  "screenshots": 213,
+  "generatedAt": "2026-08-09T07:59:09.061Z",
+  "examples": 1057,
+  "examplesWithScreenshots": 296,
+  "uniqueScreenshots": 155,
   "droppedScreenshots": 0,
   "dropped": {
     "unlabelled": 14,
-    "failed": 122,
+    "failed": 245,
     "student": 0,
-    "refused": 15
+    "refused": 19
   },
   "sourceCounts": {
-    "gemini": 975,
-    "claude": 1,
+    "gemini": 1139,
+    "claude": 192,
     "ollama": 4
   },
   "imagePaths": "relative to this folder",

@@ -94,7 +94,7 @@ export function signatureOf(text: string): string {
 }
 
 /** Note that the user did something. Keeps the session clock honest. */
-export function noteActivity(now = Date.now()) {
+export function noteActivity(now = agentNow()) {
   if (!sessionStart || now - lastActivity > SESSION_GAP_MS) {
     // A long gap means they went away and came back; that is a fresh session,
     // not a nine-hour one with a hole in the middle.
@@ -104,7 +104,7 @@ export function noteActivity(now = Date.now()) {
 }
 
 /** Feed screen text in. Returns the failure if this looked like one. */
-export function observeText(text: string, now = Date.now()): Failure | null {
+export function observeText(text: string, now = agentNow()): Failure | null {
   const f = detectFailure(text);
   if (!f) return null;
   failures.push({ at: now, signature: signatureOf(f.evidence), kind: f.kind });
@@ -114,7 +114,7 @@ export function observeText(text: string, now = Date.now()): Failure | null {
 }
 
 /** How many times the most-repeated recent problem has appeared. */
-export function repeatCount(now = Date.now()): { count: number; signature: string } {
+export function repeatCount(now = agentNow()): { count: number; signature: string } {
   const recent = failures.filter((s) => now - s.at <= FAILURE_WINDOW_MS);
   const tally = new Map<string, number>();
   for (const s of recent) tally.set(s.signature, (tally.get(s.signature) ?? 0) + 1);
@@ -131,12 +131,12 @@ export function repeatCount(now = Date.now()): { count: number; signature: strin
 }
 
 /** Is it the small hours? */
-export function isLate(now = Date.now()): boolean {
+export function isLate(now = agentNow()): boolean {
   const h = new Date(now).getHours();
   return h >= 23 || h < 5;
 }
 
-export function assess(now = Date.now()): UserState {
+export function assess(now = agentNow()): UserState {
   const { count } = repeatCount(now);
   const sessionMinutes = sessionStart ? Math.round((now - sessionStart) / 60_000) : 0;
   const reasons: string[] = [];
@@ -167,7 +167,7 @@ export function assess(now = Date.now()): UserState {
  * Deliberately hard to satisfy. Every condition here exists because the
  * alternative is an assistant that talks when it should not.
  */
-export function mayOfferHelp(state: UserState, now = Date.now()): boolean {
+export function mayOfferHelp(state: UserState, now = agentNow()): boolean {
   // Only ever for being stuck. Being tired is not something to be told about.
   if (state.mood !== "stuck") return false;
   // One failure is not a pattern.
@@ -180,11 +180,11 @@ export function mayOfferHelp(state: UserState, now = Date.now()): boolean {
   return true;
 }
 
-export function noteOffered(now = Date.now()) {
+export function noteOffered(now = agentNow()) {
   lastOffer = now;
 }
 
-export function noteDeclined(now = Date.now()) {
+export function noteDeclined(now = agentNow()) {
   refusedAt = now;
   offersDeclined++;
 }
@@ -202,7 +202,7 @@ export function noteAccepted() {
  * tested deterministically. Reading the wall clock directly is what made the
  * "same error" line untestable, since a fixed-time test still hit the real hour.
  */
-export function offerText(state: UserState, now = Date.now()): string {
+export function offerText(state: UserState, now = agentNow()): string {
   if (state.mood !== "stuck") return "";
   return state.sessionMinutes >= LONG_SESSION_MIN || isLate(now)
     ? "That's the same error a few times now — want me to take a look?"
@@ -255,3 +255,4 @@ export function reset() {
   refusedAt = 0;
   offersDeclined = 0;
 }
+import { agentNow } from "../agent-replay/deps.js";

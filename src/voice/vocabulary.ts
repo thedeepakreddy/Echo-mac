@@ -16,9 +16,9 @@ import { join } from "node:path";
  * lean toward the words you actually say, not a generic list.
  */
 
-/** Words Jarvis needs to hear correctly no matter what. */
+/** Words Echo needs to hear correctly no matter what. */
 const CORE = [
-  "Jarvis",
+  "Echo", "Hey Echo", "Jarvis",
   "screenshot", "brightness", "volume", "workflow", "undo", "redo",
   "clipboard", "terminal", "browser", "tab", "window", "folder",
   "compile", "build", "deploy", "commit", "push", "pull request",
@@ -97,7 +97,10 @@ export function buildVocabulary(appRoot: string): string {
 
   // Phrased as a sentence: whisper conditions on this as if it were preceding
   // speech, so a natural sentence biases better than a bare word list.
-  return `Jarvis is a voice assistant for a Mac. Likely words: ${terms.join(", ")}.`;
+  // The name leads: it is the one word whisper must not rewrite, and the
+  // prompt used to say "Jarvis" long after the assistant was renamed — which
+  // steered decoding AWAY from the actual wake word on every utterance.
+  return `Echo is a voice assistant for a Mac. Likely words: ${terms.join(", ")}.`;
 }
 
 /**

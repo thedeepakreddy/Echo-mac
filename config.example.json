@@ -1,39 +1,63 @@
 {
   "brain": "claude",
-
   "claude": {
     "model": "claude-opus-4-8",
     "systemPromptPreset": "claude_code"
   },
-
   "gemini": {
     "model": "gemini-2.0-flash",
     "apiKeyEnv": "GEMINI_API_KEY"
   },
-
   "voice": {
     "wakeWord": true,
-    "wakeEngine": "whisper",
-    "bargeIn": false,
+    "wakeEngine": "auto",
+    "bargeIn": true,
     "inputDevice": -1,
     "picovoiceAccessKeyEnv": "PICOVOICE_ACCESS_KEY",
     "sensitivity": 0.6,
-    "wakeSound": "assets/wake.wav",
+    "wakeSound": "assets/wake-short.wav",
     "wakeSoundSeconds": 0,
     "ttsVoice": "Daniel",
     "ttsEnabled": true,
     "sttModel": "models/ggml-base.en.bin",
     "whisperBin": "/opt/homebrew/bin/whisper-cli",
-    "silenceMs": 900,
-    "maxUtteranceMs": 15000
+    "sendAudioToBrain": false,
+    "silenceMs": 620,
+    "maxUtteranceMs": 15000,
+    "//wakeEngine": "auto = Porcupine .ppn or openWakeWord .onnx if wakeKeywordPath points at one, else the built-in template spotter (models/wake/templates.json, `npm run enroll`), else the transcript matcher. Also: porcupine | onnx | template | whisper | none.",
+    "wakeKeywordPath": "",
+    "wakeTranscriptFallback": true,
+    "//vadModel": "Silero VAD (MIT). Empty = RMS level detection.",
+    "vadModel": "models/silero_vad.onnx",
+    "//sttStreaming": "Transcribe WHILE you speak (Sarvam realtime WebSocket); the transcript is final within ~0.5 s of your last word instead of after a file round trip. sttProvider 'apple' (on-device, en/hi) needs NSSpeechRecognitionUsageDescription in the packaged app's Info.plist and falls back to the file path otherwise.",
+    "sttStreaming": true,
+    "sttStreamModel": "saaras:v4",
+    "//ttsStreaming": "Speak sentence by sentence as the model writes, through the persistent native/voiceio player. Off = the old fetch-whole-file-then-afplay path.",
+    "ttsStreaming": true,
+    "//captureEngine": "auto = the voiceio helper's echo-cancelled microphone when it runs (barge-in on speakers), pvrecorder = the plain mic.",
+    "captureEngine": "auto",
+    "//maxSpokenSentences": "Spoken replies longer than this are cut with 'The rest is on screen.' 0 = never.",
+    "maxSpokenSentences": 6,
+    "conversationMode": true,
+    "conversationWindowMs": 12000
   },
-
   "control": {
     "cliclickBin": "/opt/homebrew/bin/cliclick",
     "workingDir": "~"
   },
-
   "hud": {
     "startListeningOnLaunch": true
+  },
+  "//memory": "The Memory OS. importLegacy folds the old memories.jsonl/episodic files in once (a copy; the originals stay). cloudRecall=false stops recalled memory being sent to a cloud brain — the current task's own state still is, and the local brain is unaffected. Screen/scan-derived and sensitive content is never sent to a cloud model either way. retentionDays expires consolidated episodes created after you switch it on; 0 keeps them until forgotten.",
+  "memory": {
+    "enabled": true,
+    "importLegacy": true,
+    "cloudRecall": true,
+    "retentionDays": 0
+  },
+  "osiris": {
+    "baseUrl": "",
+    "preferLocal": true,
+    "defaultLayers": []
   }
 }

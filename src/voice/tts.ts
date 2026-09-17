@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from "node:child_process";
-import { withProsody } from "./prosody.js";
+import { withProsody, speakableText } from "./prosody.js";
+import type { SpeechStream } from "./speech-stream.js";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,18 +16,55 @@ export class Tts {
   private speaking = false;
   /** Bumped by stop(), so an interrupted drain knows it has been superseded. */
   private generation = 0;
+  /** Told the moment a player process is started — the closest thing to "first sound" on this path. */
+  private audioStartHook: ((text: string) => void) | null = null;
+
+  /** Hook for the voice log: fires when audio for a sentence actually starts. */
+  onAudioStart(fn: ((text: string) => void) | null) {
+    this.audioStartHook = fn;
+  }
+
+  /**
+   * The streaming voice. Once attached, every `say()` goes sentence by
+   * sentence through the streaming TTS and the persistent player instead of
+   * the fetch-whole-file-then-afplay path below, which stays as the fallback.
+   */
+  private stream: SpeechStream | null = null;
+
+  attachStream(stream: SpeechStream) {
+    this.stream = stream;
+    stream.on("speaking", (on: boolean) => {
+      if (this.speaking === on) return;
+      this.speaking = on;
+      this.onStateChange?.(on);
+    });
+    stream.on("firstAudio", (text: string) => {
+      try {
+        this.audioStartHook?.(text);
+      } catch {
+        /* logging must never break speech */
+      }
+    });
+  }
 
   constructor(
     private voice: string,
     private enabled: boolean,
-    private engine: "mac" | "fakeyou" | "elevenlabs" | "local-clone" = "mac",
+    private engine: "mac" | "fakeyou" | "elevenlabs" | "local-clone" | "sarvam" = "mac",
     private elevenLabsVoiceId?: string,
-    private onStateChange?: (speaking: boolean) => void
+    private onStateChange?: (speaking: boolean) => void,
+    private sarvam: { speaker?: string; pace?: number } = {}
   ) {}
 
   say(text: string) {
-    const clean = text.replace(/```[\s\S]*?```/g, " code block ").replace(/\s+/g, " ").trim();
+    // Every engine gets text written for the ear, not only `say`: the cloud
+    // voices used to be handed raw markdown and read the asterisks aloud.
+    const clean = speakableText(text);
     if (!this.enabled || !clean) return;
+    if (this.stream) {
+      this.stream.speakText(clean);
+      return;
+    }
     this.queue.push(clean);
     if (!this.speaking) void this.drain();
   }
@@ -125,6 +163,60 @@ export class Tts {
     }
   }
 
+  private async fetchSarvam(text: string): Promise<string | null> {
+    if (!process.env.SARVAM_API_KEY) {
+      console.error("[sarvam] missing API key");
+      return null;
+    }
+    // Sarvam's TTS will not detect the language for us — target_language_code is
+    // required — so pick it from the script Echo actually replied in. Latin text
+    // used to fall through to Hindi, which read English answers with Hindi
+    // phonetics; en-IN keeps the same voice and says them properly.
+    const langCode = /[\u0C00-\u0C7F]/.test(text)
+      ? "te-IN"
+      : /[\u0900-\u097F]/.test(text)
+        ? "hi-IN"
+        : "en-IN";
+    try {
+      const res = await fetch("https://api.sarvam.ai/text-to-speech", {
+        method: "POST",
+        headers: {
+          "api-subscription-key": process.env.SARVAM_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          inputs: [text],
+          target_language_code: langCode,
+          // Speakers are tied to the model generation — "meera" belonged to
+          // bulbul:v1 and both were retired, and the API 400s rather than
+          // falling back, so the two move together.
+          speaker: this.sarvam.speaker || "aditya",
+          pitch: 0,
+          pace: this.sarvam.pace ?? 1,
+          loudness: 1.5,
+          // 8000 is telephone quality and audibly muddies Telugu consonants.
+          speech_sample_rate: 22050,
+          enable_preprocessing: true,
+          model: "bulbul:v3"
+        })
+      });
+      if (!res.ok) {
+        console.error("[sarvam] http error:", res.status, await res.text());
+        return null;
+      }
+      const data = await res.json();
+      if (data.audios && data.audios[0]) {
+        const buffer = Buffer.from(data.audios[0], "base64");
+        const tmpPath = join(tmpdir(), `sarvam_${Date.now()}.wav`);
+        writeFileSync(tmpPath, buffer);
+        return tmpPath;
+      }
+    } catch (err) {
+      console.error("[sarvam] fetch error:", err);
+    }
+    return null;
+  }
+
   private async drain() {
     const generation = ++this.generation;
     this.speaking = true;
@@ -143,6 +235,9 @@ export class Tts {
       } else if (this.engine === "local-clone") {
         console.log(`[jarvis] running local open-source clone for: "${text.slice(0, 30)}..."`);
         audioPath = await this.fetchLocalClone(text);
+      } else if (this.engine === "sarvam") {
+        console.log(`[jarvis] fetching sarvam voice for: "${text.slice(0, 30)}..."`);
+        audioPath = await this.fetchSarvam(text);
       }
 
       // If stop() was called while downloading audio, don't play it.
@@ -155,12 +250,17 @@ export class Tts {
           this.current.kill("SIGTERM");
           this.current = null;
         }
-        if ((this.engine === "fakeyou" || this.engine === "elevenlabs" || this.engine === "local-clone") && audioPath) {
+        if ((this.engine === "fakeyou" || this.engine === "elevenlabs" || this.engine === "local-clone" || this.engine === "sarvam") && audioPath) {
           this.current = spawn("/usr/bin/afplay", [audioPath]);
         } else {
           // Give the line a delivery rather than reading it flat: pitch,
           // expressiveness, pace and real pauses chosen from what it says.
           this.current = spawn("/usr/bin/say", ["-v", this.voice, withProsody(text)]);
+        }
+        try {
+          this.audioStartHook?.(text);
+        } catch {
+          /* logging must never break speech */
         }
         this.current.on("exit", () => resolve());
         this.current.on("error", () => resolve());
@@ -176,10 +276,11 @@ export class Tts {
     this.onStateChange?.(false);
   }
 
-  /** Cut speech off immediately — used when the user talks over Jarvis. */
+  /** Cut speech off immediately — used when the user talks over Echo. */
   stop() {
     this.generation++;
     this.queue = [];
+    this.stream?.cancel();
     if (this.current) {
       this.current.kill("SIGTERM");
       this.current = null;
@@ -187,6 +288,12 @@ export class Tts {
     if (!this.speaking) return;
     this.speaking = false;
     this.onStateChange?.(false);
+  }
+
+  /** Change spoken-output state at runtime; muting also cuts current speech. */
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+    if (!enabled) this.stop();
   }
 
   isSpeaking() {

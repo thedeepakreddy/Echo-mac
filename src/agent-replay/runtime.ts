@@ -23,7 +23,7 @@ import {
 
 import { taskCoordinator, type TaskState } from "../memory/task-state.js";
 import { currentInvocation } from "../memory/invocation.js";
-import { consolidateTask } from "../memory/consolidate.js";
+import { consolidateTask, recordTaskStarted } from "../memory/consolidate.js";
 import { setPrivateTask } from "../memory/capture-policy.js";
 import { dataRoot } from "../memory/paths.js";
 
@@ -789,6 +789,24 @@ export class RecordingBrain extends Brain {
         const state = taskCoordinator.create({ taskId: task.taskId, parentTaskId: this.lastSendOpts?.parentTaskId ?? this.identity.parentTaskId, ownerActorId: this.identity.id, goal: userText, scope: task.scope, privateMode });
         task.taskRevision = state.revision;
         setPrivateTask(task.taskId, privateMode);
+        try {
+          // Preserve the coordinator's original goal and normalized scope on
+          // retries; a recovery prompt is provider guidance, not task memory.
+          recordTaskStarted({
+            taskId: state.taskId,
+            scope: state.scope,
+            goal: state.goal,
+            actorId: state.ownerActorId,
+            origin: task.actor.kind === "rehearsal" ? "rehearsal" : "real",
+            privateMode: state.privateMode,
+          });
+        } catch (error) {
+          // Never leave a task appearing active when its matching working
+          // memory could not be made durable.
+          try { taskCoordinator.cancel(state.taskId); } catch { /* task storage may be unavailable too */ }
+          setPrivateTask(state.taskId, false);
+          throw error;
+        }
       }
       const recorder = root && !privateMode ? new Recorder(root, runIdFor(task.actor)) : ephemeralRecorder(runIdFor(task.actor));
       if (!replay) taskCoordinator.recordAttempt(task.taskId, recorder.runId);
@@ -877,7 +895,11 @@ export class RecordingBrain extends Brain {
     if (isReplaying()) return;
     const existing = taskCoordinator.get(checkpoint.taskId); if (!existing) return;
     let state: TaskState;
-    if (status === "cancelled") state = taskCoordinator.cancel(checkpoint.taskId);
+    // A delegated Agent Task may already have committed its structured Result
+    // through submit_agent_result. The provider stream closing afterwards is
+    // transport lifecycle, not a second opinion about the task outcome.
+    if (existing.result) state = existing;
+    else if (status === "cancelled") state = taskCoordinator.cancel(checkpoint.taskId);
     else {
       // Tool-free responses can complete communication; an action needs an explicit verified postcondition.
       const noActions = Object.keys(existing.calls).length === 0 && checkpoint.actions.length === 0;

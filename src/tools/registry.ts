@@ -1,16 +1,22 @@
 import { z, ZodTypeAny } from "zod";
+import type { ToolResultMetadata } from "../memory/tool-result.js";
+import { normalizeToolOutput } from "../memory/tool-result.js";
+import { dataRoot } from "../memory/paths.js";
+import { currentInvocation } from "../memory/invocation.js";
+import { taskCoordinator } from "../memory/task-state.js";
+import type { MemoryScope } from "../memory/types.js";
+import { owningTaskId, putHandoff, readHandoff } from "../frontier/task-handoff.js";
 import * as act from "./computer-actions.js";
 import * as ax from "./ax.js";
 import { deepHookClick } from "./deep-hook.js";
 import * as vision from "./vision.js";
 import * as system from "./system.js";
 import { restore, describeRecent } from "../safety/snapshot.js";
-import { remember, forget, stats, GLOBAL } from "../memory/store.js";
-import { recallQuery } from "../memory/recall.js";
+import { stats, GLOBAL } from "../memory/store.js";
 import { currentContext } from "../memory/context.js";
 import { getAppPath } from "../utils/appPath.js";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { searchRewind, describeHistory } from "./rewind.js";
 import { loadRecent } from "../frontier/history.js";
 import { whileAway } from "../frontier/changed.js";
@@ -35,6 +41,7 @@ import { toggleSonar } from "./sonar.js";
 import { searchLongTermMemory } from "./long_term_memory.js";
 import { setMeetingRecording } from "./meeting.js";
 import { sendToOverlay, toOverlaySpace } from "../overlay.js";
+import { currentLoop } from "../agent-replay/loop-log.js";
 import { runShutdown } from "../lifecycle.js";
 import { shadowPendingCode, isShadowModeActive } from "./shadow.js";
 import { toggleCompanion, isCompanionActive } from "./companion.js";
@@ -55,6 +62,7 @@ import { setDreamingEnabled, isDreaming } from "../frontier/dreamer.js";
 import { dismissPopups } from "../frontier/popups.js";
 import { parseEmail, parsePhone, suggestSubject } from "../frontier/dictation.js";
 import { check_health } from "./health.js";
+import { inspectRun, loadEvents, renderInspectionHtml } from "../agent-replay/index.js";
 
 
 const nodeRequire = createRequire(import.meta.url);
@@ -75,6 +83,21 @@ function electronApp(): any | null {
 
 function appRoot(): string {
   return electronApp()?.getAppPath() ?? process.cwd();
+}
+
+/**
+ * The scope a memory read or write belongs to.
+ *
+ * Scope is what keeps one project's decisions out of another's task. It comes
+ * from the live task when there is one, because that is the only place the
+ * project was actually decided; the frontmost window is a fallback hint, and a
+ * window title is a guess, never an authorization boundary.
+ */
+async function memoryScope(project?: string): Promise<MemoryScope> {
+  const taskId = owningTaskId();
+  const fromTask = taskId ? (taskCoordinator.get(taskId)?.scope as MemoryScope | undefined) : undefined;
+  const projectId = project ?? fromTask?.projectId ?? (await currentContext().catch(() => null))?.project;
+  return { ...fromTask, projectId: projectId && projectId !== GLOBAL ? projectId : undefined };
 }
 
 /** Where the pointer is, as a point. cliclick reports it as "x,y". */
@@ -114,7 +137,7 @@ async function showRemoteLink(url: string): Promise<void> {
 }
 
 /** Neutral result a tool handler returns; each brain adapts it to its own wire shape. */
-export interface ToolOutput {
+export interface ToolOutput extends ToolResultMetadata {
   text?: string;
   image?: act.Screenshot;
 }
@@ -130,6 +153,49 @@ export interface ToolDef {
 
 export const TOOLS: ToolDef[] = [
   {
+    name: "inspect_agent_replay",
+    description: "Show Echo's recorded run timeline and a clear answer to why it ended. Use when a run stopped, failed, was interrupted, or the user asks to inspect the latest agent replay.",
+    schema: {
+      runId: z.string().optional().describe("Optional exact replay run ID. Omit to inspect the latest run."),
+      actorName: z.string().optional().describe("Optional actor name, such as 'Echo' or 'Echo Clone 1'. Omit for the latest actor."),
+    },
+    readOnly: true,
+    handler: async (a) => {
+      // Full named journals are always-on unless ECHO_FULL_LOG=0. Inspect
+      // whichever run store Echo is currently using.
+      const root = process.env.ECHO_REPLAY_DIR?.trim()
+        || process.env.ECHO_LOG_DIR?.trim()
+        || join(appRoot(), "runs");
+      if (!existsSync(root)) {
+        return { text: "There are no recorded Echo runs yet." };
+      }
+      const actorPrefix = a.actorName ? `${String(a.actorName).trim()}--` : "";
+      const runId = a.runId || readdirSync(root)
+        .filter((entry) => {
+          try {
+            return statSync(join(root, entry)).isDirectory() &&
+              existsSync(join(root, entry, "events.jsonl")) &&
+              (!actorPrefix || entry.startsWith(actorPrefix));
+          } catch { return false; }
+        })
+        .sort((left, right) => statSync(join(root, right)).mtimeMs - statSync(join(root, left)).mtimeMs)[0];
+      if (!runId) return { text: "There are no recorded Echo runs yet." };
+      const runDir = join(root, runId);
+      try {
+        const summary = inspectRun(loadEvents(runDir));
+        sendToOverlay("show-data-pane", {
+          title: `${summary.actorName.toUpperCase()} · ${summary.status.toUpperCase()}`,
+          content: renderInspectionHtml(summary),
+          duration: 30000,
+        });
+        const detail = summary.exitDetail ? ` ${summary.exitDetail}` : "";
+        return { text: `${summary.actorName} run ${summary.runId} ${summary.status} after ${summary.iterations} iteration(s): ${summary.exitReason ?? "no exit event"}.${detail}` };
+      } catch (error: any) {
+        return { text: `I couldn't read replay ${runId}: ${error?.message ?? error}` };
+      }
+    },
+  },
+  {
     name: "create_skill",
     description:
       "Teach yourself a new reusable skill by chaining tools you ALREADY have. Use this when the user describes a repeatable multi-step task ('make a skill that opens Mail, waits, and reads the screen'). Provide a name and an ordered list of steps, each naming an existing tool and its arguments. A skill is saved data, not code — it can only combine tools you already have.",
@@ -142,12 +208,25 @@ export const TOOLS: ToolDef[] = [
     },
     readOnly: false,
     handler: async (a) => {
-      const { validateSkill, saveSkill } = await import("../frontier/skills.js");
+      const { validateSkill, saveSkill, getSkill } = await import("../frontier/skills.js");
       const known = new Set(TOOLS.map((t) => t.name));
       const res = validateSkill(a, known);
-      if (!res.ok) return { text: `I couldn't create that skill:\n${res.errors.map((e) => `• ${e}`).join("\n")}` };
-      saveSkill(res.skill, appRoot());
-      return { text: `Learned the skill "${res.skill.name}" (${res.skill.steps.length} steps). Say "run the ${res.skill.name} skill" any time.` };
+      if (!res.ok) return { status: "failed", verification: "unverified", error: { category: "invalid_arguments", message: res.errors.join("; ") },
+        text: `I couldn't create that skill:\n${res.errors.map((e) => `• ${e}`).join("\n")}` };
+      saveSkill(res.skill, dataRoot());
+      // A skill the user taught is a procedure they authorised, so it is active
+      // immediately. One Echo proposed for itself would be a candidate until it
+      // had actually worked several times — see noteProcedureRun.
+      const stored = getSkill(res.skill.name, dataRoot()) ?? res.skill;
+      try {
+        const { recordProcedure } = await import("../memory/consolidate.js");
+        recordProcedure({
+          procedureId: stored.procedureId, version: stored.version, name: stored.name,
+          description: stored.description || stored.name, steps: stored.steps,
+          scope: await memoryScope(), taskId: owningTaskId(), taughtByUser: true,
+        });
+      } catch (error) { console.error("[memory] procedure not recorded", error); }
+      return { text: `Learned the skill "${stored.name}" (${stored.steps.length} steps)${stored.version > 1 ? `, now version ${stored.version}` : ""}. Say "run the ${stored.name} skill" any time.` };
     },
   },
   {
@@ -157,7 +236,7 @@ export const TOOLS: ToolDef[] = [
     readOnly: true,
     handler: async () => {
       const { loadSkills, describeSkills } = await import("../frontier/skills.js");
-      return { text: describeSkills(loadSkills(appRoot())) };
+      return { text: describeSkills(loadSkills(dataRoot())) };
     },
   },
   {
@@ -168,7 +247,7 @@ export const TOOLS: ToolDef[] = [
     handler: async (a) => {
       const { getSkill, screenPlan } = await import("../frontier/skills.js");
       const { classify } = await import("../safety/risk.js");
-      const skill = getSkill(a.name, appRoot());
+      const skill = getSkill(a.name, dataRoot());
       if (!skill) return { text: `I don't have a skill called "${a.name}". Ask me to list your skills.` };
 
       // Screen the plan: any high-risk step means Echo hands the plan back to be
@@ -180,16 +259,38 @@ export const TOOLS: ToolDef[] = [
         return { text: `The "${skill.name}" skill includes step(s) ${screen.highSteps.join(", ")} that change things, so I'll run it with you step by step. Plan:\n${plan}` };
       }
 
-      for (const step of skill.steps) {
+      const { runGated } = await import("../safety/gate.js");
+      const results: Array<{ step: number; tool: string; result: ToolOutput }> = [];
+      for (const [index, step] of skill.steps.entries()) {
         const tool = TOOLS.find((t) => t.name === step.tool);
-        if (!tool) continue; // validated at creation, but a tool could be removed later
+        if (!tool || tool.name === "run_skill") {
+          return { status: results.length ? "partial" : "failed", verification: "unverified", data: { results },
+            text: `The "${skill.name}" skill stopped at step ${index + 1}: ${tool ? "recursive skills are not allowed" : `tool ${step.tool} is unavailable`}.` };
+        }
         try {
-          await tool.handler(step.args ?? {});
-        } catch (e) {
-          return { text: `The "${skill.name}" skill stopped at ${step.tool}: ${(e as any)?.message ?? e}` };
+          const args = z.object(tool.schema).parse(step.args ?? {});
+          const result = normalizeToolOutput(await runGated(tool, args, { workingDir: appRoot() }));
+          results.push({ step: index + 1, tool: step.tool, result });
+          if (result.status !== "success") {
+            return { status: results.length > 1 ? "partial" : result.status, verification: "unverified", data: { results },
+              text: `The "${skill.name}" skill stopped at step ${index + 1}: ${result.text ?? result.error?.message ?? result.status}.` };
+          }
+        } catch (error: any) {
+          return { status: results.length ? "partial" : "failed", verification: "unverified", data: { results },
+            error: { category: "tool_error", message: String(error?.message ?? error) },
+            text: `The "${skill.name}" skill stopped at ${step.tool}: ${error?.message ?? error}` };
         }
       }
-      return { text: `Ran the "${skill.name}" skill (${skill.steps.length} steps).` };
+      try {
+        const { noteProcedureRun } = await import("../memory/consolidate.js");
+        // Every step returned success, but no postcondition has been checked —
+        // that is exactly the distinction the report is about, so this run does
+        // NOT yet count towards trusting the workflow. verify_task is what
+        // turns it into one that does.
+        noteProcedureRun({ procedureId: skill.procedureId, version: skill.version, scope: await memoryScope(), taskId: owningTaskId(), verified: false, origin: "real" });
+      } catch (error) { console.error("[memory] procedure run not recorded", error); }
+      return { status: "success", verification: "unverified", data: { results, procedureId: skill.procedureId, version: skill.version },
+        text: `Ran every step of the "${skill.name}" skill (${skill.steps.length} steps) without error. That is not proof it worked — call verify_task with what should now be true before telling the user it is done.` };
     },
   },
   {
@@ -247,7 +348,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "screenshot",
     description:
-      "Capture the current screen and see it as an image. Call this FIRST whenever you need to understand what is on screen before acting. The image is at the display's logical resolution, so pixel coordinates in the image map 1:1 to coordinates you pass to click/move_mouse. If the user has more than one display, pass `display` to choose which one.",
+      "Capture the screen as an image. This is the LAST of the three ways to look, not the first: it puts a full image into the conversation and that image is re-sent on every step that follows, so use it only when you need layout, colour, an image, or a control that has no label and no text. To find something to click, use list_ui_elements. To read a value, a status or an error, use read_screen_text. Pixel coordinates in the image map 1:1 to the coordinates click and move_mouse take. Pass `display` to pick a screen when there is more than one.",
     schema: {
       display: z
         .string()
@@ -276,7 +377,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "list_ui_elements",
     description:
-      "List the interactive controls (buttons, fields, links, checkboxes, menus) of the frontmost app, read from the macOS accessibility tree with their exact labels and centre coordinates. Prefer this over screenshot when you need to click a specific named control — it is far more reliable than guessing pixels. If it reports no accessibility data (common for Chrome/Brave and some Electron apps), fall back to screenshot + click.",
+      "List the interactive controls (buttons, fields, links, checkboxes, menus) of the frontmost app from the macOS accessibility tree, with their exact labels and centre coordinates. FIRST choice when you need to click something: it tells you what the control is really called, so nothing is guessed. Costs no image. If it reports no accessibility data — usual for Chrome, Brave and some Electron apps — switch to read_screen_text and click_text rather than screenshot.",
     schema: {},
     readOnly: true,
     handler: async () => {
@@ -287,7 +388,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "click_ui_element",
     description:
-      "Click a control by describing it (e.g. 'the Send button', 'Search field', 'Sign in'), resolved against the accessibility tree rather than pixel coordinates. Activates the control directly when possible — no mouse movement, and it works even if the control is partially covered. Call list_ui_elements first if unsure of the exact label. Falls back to a coordinate click when direct activation is unavailable.",
+      "Click a control by describing it ('the Send button', 'Search field', 'Sign in'), resolved against the accessibility tree rather than pixels. FIRST choice for clicking: it activates the control directly, needs no mouse movement, and still works when the control is partly covered or the window has moved. Call list_ui_elements first if you are unsure of the exact label. If the app exposes no accessibility tree, use click_text instead.",
     schema: {
       description: z
         .string()
@@ -338,7 +439,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "move_mouse",
-    description: "Move the mouse cursor to the given screen coordinates (points).",
+    description: "Move the cursor without clicking. Needed on its own only to reveal something that appears on hover — a tooltip, a hidden toolbar, a menu that opens on hover — or to park the pointer over a control before calling scroll. Do NOT call this before clicking: click moves the pointer itself.",
     schema: {
       x: z.number().describe("X coordinate in logical points from the left edge"),
       y: z.number().describe("Y coordinate in logical points from the top edge"),
@@ -349,7 +450,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "click",
     description:
-      "Click the mouse at the given coordinates. Use button 'left' (default), 'right' for context menus, or 'double' to open items.",
+      "Click at exact pixel coordinates. LAST choice: prefer click_ui_element (by name) or click_text (by visible words), neither of which breaks when the window moves or the layout reflows. Use coordinates only for something with no label and no text — a canvas, an image region, a custom-drawn control — and take a screenshot first to know where it is. button is 'left' (default), 'right' for a context menu, or 'double' to open an item.",
     schema: {
       x: z.number().describe("X coordinate in logical points"),
       y: z.number().describe("Y coordinate in logical points"),
@@ -360,7 +461,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "drag",
-    description: "Press the mouse button at one point and release at another (drag).",
+    description: "Press at one point, move, and release at another. This is how you move a slider handle that has no number box, reorder a list, select a range of text, or drag a file. If the control has an editable number beside it, set_value is exact and a drag is a guess — prefer set_value.",
     schema: {
       fromX: z.number(),
       fromY: z.number(),
@@ -373,7 +474,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "type_text",
     description:
-      "Type text at the current keyboard focus, as if typed on the keyboard. Newlines are sent as Return. Click the target field first so it has focus.",
+      "Type at the current keyboard focus, as if on the keyboard; newlines are sent as Return. Click the target field first so it has focus. Typing into a field that already has content APPENDS to it — to set a field to an exact value, use set_value, which clears what is there first.",
     schema: { text: z.string().describe("The exact text to type") },
     readOnly: false,
     handler: async (a) => ({ text: await act.typeText(a.text) }),
@@ -506,7 +607,8 @@ export const TOOLS: ToolDef[] = [
         // A speaker built from the app's own voice settings. Created once, not
         // per tick, so it does not stutter.
         const watcherTts = new Tts(
-          cfg.voice.ttsVoice, cfg.voice.ttsEnabled, cfg.voice.ttsEngine, cfg.voice.elevenLabsVoiceId
+          cfg.voice.ttsVoice, cfg.voice.ttsEnabled, cfg.voice.ttsEngine, cfg.voice.elevenLabsVoiceId,
+          undefined, { speaker: cfg.voice.sarvamSpeaker, pace: cfg.voice.sarvamPace }
         );
         const host = (cfg.ollama.host || "http://localhost:11434").replace(/\/$/, "");
 
@@ -597,7 +699,7 @@ TOOLS.push(
   {
     name: "remember",
     description:
-      "Save something worth knowing in future sessions — it survives restarts. Use it when the user states a lasting preference ('always use pnpm', 'keep replies short'), when a decision is made and the reasoning matters, or when a piece of ongoing work should be picked up later. Record what the user TOLD you and what you DID; never record the contents of what you saw on their screen. Do not save routine chatter — only things you would genuinely want to know next week.",
+      "Save something worth knowing in future sessions — it survives restarts. Use it when the user states a lasting preference ('always use pnpm', 'keep replies short'), when a decision is made and the reasoning matters, or when a piece of ongoing work should be picked up later. Record what the user TOLD you and what you DID; never record the contents of what you saw on their screen, and never record a password, key or card number. Do not save routine chatter — only things you would genuinely want to know next week.",
     schema: {
       text: z.string().describe("The fact, in one clear sentence, written to be read later"),
       type: z
@@ -613,51 +715,289 @@ TOOLS.push(
     },
     readOnly: false,
     handler: async (a) => {
-      const project =
-        a.project ?? (a.type === "preference" ? GLOBAL : (await currentContext()).project);
-      const rec = remember(a.text, a.type ?? "episode", project);
-      return { text: `Remembered (${rec.type}${project !== GLOBAL ? `, ${project}` : ""}): ${rec.text}` };
+      const { memoryService } = await import("../memory/service.js");
+      const type = a.type ?? "episode";
+      // A preference is global unless the user scoped it; everything else
+      // belongs to the project it came out of, so another project's task cannot
+      // be steered by it.
+      const project = a.project ?? (type === "preference" ? GLOBAL : (await currentContext()).project);
+      const scope = await memoryScope(project);
+      const taskId = owningTaskId();
+      const saved = memoryService.propose({
+        layer: type === "episode" ? "episodic" : "semantic",
+        kind: type,
+        key: type === "preference" || type === "decision" ? `${type}:${a.text.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60)}` : undefined,
+        summary: a.text,
+        scope,
+        status: "active",
+        confidence: 1,
+        confidenceBasis: "The user stated this directly",
+        importance: type === "preference" ? 0.9 : 0.6,
+        observedAt: new Date().toISOString(),
+        source: {
+          kind: "user", trust: "user_asserted", origin: "real", taskId,
+          evidenceRefs: taskId ? [`task:${taskId}`] : [], derivedFromIds: [],
+        },
+      });
+      if (!saved) return { text: "I did not save that — it was empty, or you had asked me to stop learning here.", status: "denied", error: { category: "write_policy", message: "memory write refused by policy" } };
+      const where = project && project !== GLOBAL ? `, ${project}` : "";
+      const note = saved.status === "disputed" ? " It contradicts something I already had, so I've flagged both rather than overwriting." : "";
+      return { text: `Remembered (${type}${where}): ${saved.summary}${note}`, data: { id: saved.id, status: saved.status } };
     },
   },
   {
     name: "recall",
     description:
-      "Search what you remember from earlier sessions. The most relevant memories are already in your context at the start of a session — use this when you need something older or more specific, or when the user asks what you remember.",
+      "Search what you remember from earlier sessions. The most relevant memories are already in your context at the start of a turn — use this when you need something older or more specific, or when the user asks what you remember. Results carry their source and how far they can be trusted; reading one does not make it more certain.",
     schema: {
       query: z.string().default("").describe("What to look for. Empty returns the most recent memories."),
       project: z.string().optional().describe("Limit to one project"),
     },
     readOnly: true,
-    handler: async (a) => ({ text: recallQuery(a.query ?? "", a.project) }),
+    handler: async (a) => {
+      const { executeMemoryCommand } = await import("../memory/commands.js");
+      const scope = await memoryScope(a.project);
+      return { text: executeMemoryCommand(`/memory inspect ${a.query ?? ""}`.trim(), { scope, appRoot: appRoot() }) ?? "Nothing remembered yet." };
+    },
   },
   {
     name: "forget",
     description:
-      "Delete remembered things — when the user says to forget something, or when a memory turns out to be wrong or out of date. Pass the same words the memory used.",
+      "Delete remembered things everywhere they were kept — when the user says to forget something, or when a memory turns out to be wrong or out of date. This reaches the derived copies too: episodes, learned facts, screen embeddings, scans and training captures that came from the same source. Pass the words the memory actually used, or its ID from inspect_memory. It cannot be undone.",
     schema: {
-      query: z.string().describe("What to forget, matched against remembered text"),
+      query: z.string().default("").describe("What to forget. EVERY word must appear in the memory, so be specific — this is deliberately strict so an ordinary sentence cannot delete the wrong thing."),
+      id: z.string().optional().describe("An exact memory ID from inspect_memory. Preferred when you have one."),
+      taskId: z.string().optional().describe("Forget everything learned from one task, by its ID."),
     },
     readOnly: false,
     handler: async (a) => {
-      const n = forget({ query: a.query });
+      const query = (a.query ?? "").trim();
+      if (!a.id && !a.taskId && !query) {
+        return { text: "Tell me specifically what to forget — a memory ID, a task ID, or the words the memory used.", status: "failed", error: { category: "invalid_arguments", message: "an unscoped forget is refused" } };
+      }
+      const { forgetEverywhere } = await import("../memory/deletion.js");
+      const scope = await memoryScope();
+      const receipt = forgetEverywhere({ ids: a.id ? [a.id] : undefined, taskId: a.taskId, query: a.id || a.taskId ? undefined : query, scope, appRoot: appRoot() });
+      if (!receipt.count && !Object.keys(receipt.stores).length) {
+        return { text: `Nothing I remember matches that.`, status: "success", data: { count: 0 } };
+      }
+      const places = Object.keys(receipt.stores).length;
+      const caveats = receipt.limitations.length ? `\n${receipt.limitations.map((l) => `Note: ${l}`).join("\n")}` : "";
+      const failed = receipt.failures.length ? `\nI could not reach: ${receipt.failures.join(", ")}.` : "";
       return {
-        text: n
-          ? `Forgot ${n} ${n === 1 ? "memory" : "memories"} matching "${a.query}".`
-          : `Nothing remembered matches "${a.query}".`,
+        text: `Forgotten. ${receipt.count} memory record${receipt.count === 1 ? "" : "s"} removed${places ? `, along with derived copies in ${places} other place${places === 1 ? "" : "s"}` : ""}. Receipt ${receipt.id}.${failed}${caveats}`,
+        data: { receipt: receipt.id, count: receipt.count, stores: receipt.stores },
       };
     },
   },
   {
+    name: "stop_learning_here",
+    description:
+      "Stop remembering anything from this project or task, and keep it that way. Different from forgetting: forgetting removes what is already there, this prevents new memory being written here at all, including in the background. Use it when the user says 'do not remember this', 'stop learning from this project', or 'keep this off the record'. Pass on=false to resume.",
+    schema: {
+      on: z.boolean().default(true).describe("true stops learning here; false resumes it."),
+      scope: z.enum(["task", "project"]).default("task").describe("task = only what you are doing right now; project = everything in this project until you turn it back on."),
+      reason: z.string().optional().describe("Why, in a few words, for the user's own record."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const { memoryService } = await import("../memory/service.js");
+      const taskId = owningTaskId();
+      const scope = await memoryScope();
+      const perTask = (a.scope ?? "task") === "task";
+      if (perTask && !taskId) return { text: "There is no active task to exclude.", status: "failed", error: { category: "invalid_arguments", message: "no task in scope" } };
+      memoryService.setSuppression({
+        scope: perTask ? {} : { projectId: scope.projectId },
+        taskId: perTask ? taskId : undefined,
+        enabled: a.on !== false,
+        reason: a.reason,
+      });
+      const where = perTask ? "this task" : scope.projectId ? `the ${scope.projectId} project` : "this workspace";
+      return { text: a.on === false ? `Learning from ${where} is on again.` : `I will not remember anything from ${where}. What I already remember is untouched — say forget if you want that gone too.` };
+    },
+  },
+  {
     name: "memory_status",
-    description: "Report how much is remembered and where it is stored, for when the user asks about their data.",
+    description: "Report how much is remembered, in which layers, and where it is stored — for when the user asks about their data.",
     schema: {},
     readOnly: true,
     handler: async () => {
-      const s = stats();
+      const { memoryService } = await import("../memory/service.js");
+      const { memoryRoot } = await import("../memory/paths.js");
       const ctx = await currentContext();
+      const scope = await memoryScope();
+      const all = memoryService.list(undefined, { includeInactive: true });
+      const byLayer = new Map<string, number>();
+      for (const m of all) byLayer.set(m.layer, (byLayer.get(m.layer) ?? 0) + 1);
+      const layers = [...byLayer.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([l, n]) => `${l} ${n}`).join(", ");
+      const here = memoryService.list(scope).length;
+      const legacy = stats();
+      const suppressed = memoryService.suppressions().filter((r) => r.enabled).length;
       return {
-        text: `${s.count} memories across ${s.projects.length} project(s), stored in ${s.file}. Current project looks like: ${ctx.project} (${ctx.app}).`,
+        text: [
+          `${all.length} memory record(s)${layers ? ` (${layers})` : ""} at revision ${memoryService.revision()}, stored in ${memoryRoot()}.`,
+          `${here} of them apply to the current project, which looks like "${ctx.project}" (${ctx.app}).`,
+          `${legacy.count} record(s) remain in the older store at ${legacy.file}.`,
+          suppressed ? `${suppressed} place(s) where you have told me to stop learning.` : "",
+        ].filter(Boolean).join("\n"),
       };
+    },
+  },
+  {
+    name: "inspect_memory",
+    description:
+      "Show what you actually remember, with where each memory came from and how far it can be trusted. Use it when the user asks what you remember, what you know about this project, or why you believed something — and use it on yourself before relying on a memory that would be expensive to get wrong. Reading a memory never makes it more certain.",
+    schema: {
+      query: z.string().default("").describe("What to look for. Empty lists everything in the current scope, newest first."),
+      id: z.string().optional().describe("One memory's ID, to see its full provenance: source, evidence, what it superseded and what it contradicts."),
+      project: z.string().optional().describe("Limit to one project. Omit for the current one."),
+    },
+    readOnly: true,
+    handler: async (a) => {
+      const { executeMemoryCommand } = await import("../memory/commands.js");
+      const scope = await memoryScope(a.project);
+      const command = a.id ? `/memory why ${a.id}` : `/memory inspect ${a.query ?? ""}`.trim();
+      return { text: executeMemoryCommand(command, { scope, appRoot: appRoot() }) ?? "Memory inspection is unavailable." };
+    },
+  },
+  {
+    name: "inspect_task",
+    description:
+      "Show the state of the task you are working on right now: the goal, every tool call and how it ended, what has been verified, what is still uncertain, and anything blocking it. Use it when the user asks where things stand, when you resume after an interruption, or when you have lost track of what you already did — reading your own state is cheaper and far more reliable than guessing from the conversation.",
+    schema: {},
+    readOnly: true,
+    handler: async () => {
+      const taskId = owningTaskId();
+      const state = taskId ? taskCoordinator.get(taskId) : undefined;
+      if (!state) return { text: "There is no active task state to report." };
+      const calls = Object.values(state.calls);
+      const unresolved = calls.filter((c) => ["running", "timeout", "uncertain", "partial"].includes(c.status));
+      const failed = calls.filter((c) => c.status === "failed" || c.status === "denied");
+      const line = (c: typeof calls[number]) => `  • ${c.tool} (${c.status})${c.result?.error ? ` — ${c.result.error.category}: ${c.result.error.message}` : ""}`;
+      const parts = [
+        `Task ${state.taskId} · revision ${state.revision} · ${state.status}`,
+        `Goal: ${state.goal || "(not recorded)"}`,
+        `Calls: ${calls.length} (${calls.filter((c) => c.status === "success").length} succeeded, ${failed.length} failed or denied, ${unresolved.length} unresolved).`,
+        failed.length ? `Failed:\n${failed.map(line).join("\n")}` : "",
+        unresolved.length ? `Still uncertain — an external effect may have happened; look before retrying:\n${unresolved.map(line).join("\n")}` : "",
+        state.verificationRefs.length ? `Verified evidence: ${state.verificationRefs.join(", ")}` : "Nothing has been verified yet.",
+        state.artifacts.length ? `Artifacts: ${JSON.stringify(state.artifacts).slice(0, 800)}` : "",
+        state.blockers.length ? `Blockers: ${JSON.stringify(state.blockers).slice(0, 800)}` : "",
+        state.childTaskIds.length ? `Child tasks: ${state.childTaskIds.join(", ")}` : "",
+      ];
+      return { text: parts.filter(Boolean).join("\n"), status: "success", verification: "unverified", data: { taskId: state.taskId, revision: state.revision } };
+    },
+  },
+  {
+    name: "verify_task",
+    description:
+      "Prove an action task actually happened, by checking the result yourself before you tell the user it is done. A tool that returned without error is not evidence that the file was written, the app changed, or the message is on screen — this is what turns 'the call succeeded' into 'the thing exists'. Call it with the concrete conditions that must now be true. Checks are read-only and never change anything. Use it for tasks that DID something; a question you answered needs no verification.",
+    schema: {
+      checks: z
+        .array(
+          z.object({
+            kind: z.enum(["file_exists", "file_absent", "file_contains", "screen_contains"]).describe("What to check."),
+            path: z.string().optional().describe("Absolute path to the file, for the file checks. ~ is expanded. A relative path is refused rather than guessed at."),
+            text: z.string().optional().describe("The text that must be present, for file_contains and screen_contains."),
+          })
+        )
+        .min(1)
+        .describe("Every condition that must hold for the task to be genuinely complete."),
+      summary: z.string().optional().describe("One sentence on what was accomplished, recorded with the outcome."),
+    },
+    readOnly: true,
+    handler: async (a) => {
+      const taskId = owningTaskId();
+      const results: { check: string; ok: boolean; detail: string }[] = [];
+      for (const check of a.checks) {
+        // Absolute only, like the other file tools. Guessing a base directory
+        // is how a check passes against the wrong file and reports a task done.
+        const given = check.path?.trim() ?? "";
+        const target = given.startsWith("~/") ? join(homedir(), given.slice(2)) : given === "~" ? homedir() : given;
+        const label = `${check.kind}${target ? ` ${target}` : ""}${check.text ? ` ~ ${JSON.stringify(check.text.slice(0, 60))}` : ""}`;
+        try {
+          if (check.kind === "file_exists" || check.kind === "file_absent" || check.kind === "file_contains") {
+            if (!target) { results.push({ check: label, ok: false, detail: "no path given" }); continue; }
+            if (!isAbsolute(target)) { results.push({ check: label, ok: false, detail: `"${given}" is relative — give the absolute path so the check cannot land on the wrong file` }); continue; }
+            const there = existsSync(target);
+            if (check.kind === "file_exists") results.push({ check: label, ok: there, detail: there ? `exists, ${statSync(target).size} bytes` : "not found" });
+            else if (check.kind === "file_absent") results.push({ check: label, ok: !there, detail: there ? "still exists" : "absent" });
+            else {
+              const found = there && readFileSync(target, "utf8").includes(check.text ?? "");
+              results.push({ check: label, ok: found, detail: !there ? "not found" : found ? "contains the text" : "file exists but the text is not in it" });
+            }
+          } else {
+            // Read the screen rather than trust the model's recollection of it.
+            const screen = vision.summarizeOcr(await vision.ocr("accurate"));
+            const found = screen.toLowerCase().includes((check.text ?? "").toLowerCase());
+            results.push({ check: label, ok: found && !!check.text, detail: found ? "on screen now" : "not on screen" });
+          }
+        } catch (error: any) {
+          results.push({ check: label, ok: false, detail: `could not check: ${error?.message ?? error}` });
+        }
+      }
+      const passed = results.filter((r) => r.ok);
+      const verified = passed.length === results.length;
+      const refs = passed.map((r) => `verified:${r.check}@${new Date().toISOString()}`);
+      if (taskId && refs.length) {
+        try { taskCoordinator.recordVerification(taskId, refs); }
+        catch (error) { console.error("[memory] verification not recorded", error); }
+      }
+      // A workflow that ran in this task is only credited once its result has
+      // actually been checked — which is the moment this tool succeeds.
+      if (taskId && verified) {
+        try {
+          const { noteProcedureRun } = await import("../memory/consolidate.js");
+          const scope = await memoryScope();
+          const ran = Object.values(taskCoordinator.get(taskId)?.calls ?? {})
+            .filter((c) => c.tool === "run_skill" && c.status === "success");
+          for (const call of ran) {
+            const data = (call.result?.data ?? {}) as { procedureId?: string; version?: number };
+            if (data.procedureId) noteProcedureRun({ procedureId: data.procedureId, version: data.version, scope, taskId, verified: true, verificationRefs: refs, origin: "real" });
+          }
+        } catch (error) { console.error("[memory] verified procedure run not recorded", error); }
+      }
+      const report = results.map((r) => `${r.ok ? "✓" : "✗"} ${r.check} — ${r.detail}`).join("\n");
+      return {
+        text: verified
+          ? `Verified — every postcondition holds:\n${report}`
+          : `NOT verified. Do not report this task as done; fix what failed and check again:\n${report}`,
+        status: verified ? "success" : "failed",
+        verification: verified ? "verified" : "contradicted",
+        verificationRefs: refs,
+        ...(verified ? {} : { error: { category: "verification_failed", message: `${results.length - passed.length} of ${results.length} postconditions did not hold`, retryable: true } }),
+        data: { results, summary: a.summary },
+      };
+    },
+  },
+  {
+    name: "tool_memory",
+    description:
+      "What you have learned about how well your own tools work — how often each one actually succeeded, how it usually fails, and how long it takes. Consult it before choosing between two tools that do the same job, and after a tool fails twice. Reliability is counted only from outcomes that were verified, so a small sample says 'not enough evidence' rather than a confident number.",
+    schema: { tool: z.string().default("").describe("One tool's name. Empty gives the least reliable tools first.") },
+    readOnly: true,
+    handler: async (a) => {
+      const { memoryService } = await import("../memory/service.js");
+      const rows = memoryService.list(undefined, { layer: "tool", includeInactive: true })
+        .filter((m) => !a.tool || m.key === `tool:${a.tool}`);
+      if (!rows.length) return { text: a.tool ? `Nothing has been observed about ${a.tool} yet.` : "No tool outcomes have been recorded yet." };
+      const describe = (m: (typeof rows)[number]) => {
+        const p = (m.payload ?? {}) as Record<string, number | string | null>;
+        const sample = Number(p.verifiedAttempts ?? 0);
+        const rate = sample ? `${Math.round(Number(p.reliability ?? 0) * 100)}% verified success over ${sample} verified outcome${sample === 1 ? "" : "s"}` : "no verified sample yet";
+        const notes = [
+          `${p.attempts ?? 0} call(s) observed`,
+          Number(p.failed) ? `${p.failed} failed` : "",
+          Number(p.denied) ? `${p.denied} denied` : "",
+          Number(p.uncertain) ? `${p.uncertain} uncertain or partial` : "",
+          Number(p.unverified) ? `${p.unverified} unverified` : "",
+          p.averageDurationMs ? `~${p.averageDurationMs}ms each` : "",
+          p.lastErrorCategory ? `last error: ${p.lastErrorCategory}` : "",
+        ].filter(Boolean).join(", ");
+        return `${String(m.key).replace(/^tool:/, "")}: ${rate}. ${notes}.`;
+      };
+      const ranked = [...rows].sort((a2, b2) => (Number(a2.payload?.reliability ?? 1) - Number(b2.payload?.reliability ?? 1)) || String(a2.key).localeCompare(String(b2.key)));
+      return { text: ranked.slice(0, 20).map(describe).join("\n") };
     },
   },
   {
@@ -877,13 +1217,15 @@ TOOLS.push(
         translate.clearPending();
         return { text: "I couldn't find any readable text on screen to translate." };
       }
-      translate.stashBlocks(blocks, language);
+      const resource = await scan.frontContext();
+      const handle = translate.stashBlocks(blocks, language, translate.translationVersion(blocks, JSON.stringify(resource)));
 
       return {
         text:
           `Found ${blocks.length} passages on screen. Translate each into ${language}, then call show_translation ` +
-          `with one numbered line per passage, using these exact numbers:\n\n` +
+          `with handleId "${handle.id}" and one numbered line per passage, using these exact numbers:\n\n` +
           blocks.map((b, i) => `${i + 1}. ${b.text}`).join("\n"),
+        data: { handleId: handle.id, expiresAt: handle.expiresAt },
       };
     },
   },
@@ -892,17 +1234,23 @@ TOOLS.push(
     description:
       "Lay translated text over the screen, on top of the original. Call this after translate_screen, passing your translations as numbered lines matching the numbers you were given.",
     schema: {
+      handleId: z.string().optional().describe("Exact handle from translate_screen; prevents stale or cross-task results."),
       translations: z
         .string()
         .describe("One numbered line per passage, e.g. '1. Hello\\n2. Goodbye'. Use the same numbers you were given."),
     },
     readOnly: false,
     handler: async (a) => {
-      const blocks = translate.pendingBlocks();
-      if (!blocks.length) {
-        return { text: "I don't have any passages waiting — call translate_screen first." };
+      const handle = translate.pendingTranslation(a.handleId);
+      if (!handle) return { status: "failed", text: "The translation handle is missing, stale, or belongs to another task. Call translate_screen again." };
+      const [resource, fresh] = await Promise.all([scan.frontContext(), vision.ocr("accurate")]);
+      const version = translate.translationVersion(translate.translatableBlocks(fresh.lines ?? []), JSON.stringify(resource));
+      if (fresh.error || version !== handle.resourceVersion) {
+        translate.clearPending();
+        return { status: "failed", text: "The screen changed since translation was captured. Call translate_screen again." };
       }
-      const target = translate.pendingTarget();
+      const blocks = handle.value.blocks;
+      const target = handle.value.language;
       const parsed = translate.parseTranslations(a.translations, blocks);
       const shown = translate.drawable(parsed);
 
@@ -917,7 +1265,8 @@ TOOLS.push(
           note: `${target} · say "clear translation" to dismiss`,
         });
       }
-      return { text: translate.describe(shown, target, blocks.length) };
+      translate.clearPending();
+      return { text: translate.describe(shown, target, blocks.length), status: "success", verification: "unverified" };
     },
   },
   {
@@ -1043,6 +1392,217 @@ TOOLS.push(
       }
       openOrbitalPanel();
       return { text: "Opening the live orbital tracker. It'll appear once the feed has loaded." };
+    },
+  },
+  {
+    name: "show_osiris",
+    description:
+      "Open (or close) the Osiris panel — the live global intelligence grid: a 3D world map layered with real-time flights, earthquakes, fires, satellites, CCTV cameras, undersea cables, conflict zones and 24/7 news. Use when the user asks to see the world map, the globe, global intelligence, OSINT, what's happening in the world, or Osiris by name. THE PANEL STAYS ON SCREEN until they ask to close it — never close it as tidying up, only when they say so. Pass layers to open it already showing something specific.",
+    schema: {
+      show: z.boolean().optional().describe("true to open (default), false to close."),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to show on arrival — e.g. flights, earthquakes, fires, satellites, cameras, news, war, cables."),
+      pin: z
+        .boolean()
+        .optional()
+        .describe("Keep the grid above other windows and on every desktop."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const osiris = await import("../osiris.js");
+      if (a.show === false) {
+        if (!osiris.isOsirisOpen()) return { text: "The Osiris grid isn't open." };
+        osiris.closeOsirisPanel();
+        return { text: "Closed the Osiris grid." };
+      }
+
+      const { resolveLayers, isHosted, speakList } = await import("./osiris-intel.js");
+      const { ids, unknown } = resolveLayers(a.layers ?? []);
+      const wasOpen = osiris.isOsirisOpen();
+      const { base } = await osiris.openOsirisPanel({ layers: ids, pin: a.pin });
+
+      const where = isHosted(base) ? "the live grid" : `the instance at ${base}`;
+      // With no layers named the panel opens on the standard view, which is two
+      // dozen layers — a count, not a recital.
+      const showing = ids.length ? `showing ${speakList(ids)}` : "with the standard view";
+      const opened = wasOpen
+        ? `The Osiris grid is already up${ids.length ? `, switching to ${speakList(ids)}` : ""}.`
+        : `Opening the Osiris grid on ${where}, ${showing}. It'll appear once the globe has loaded, and it stays up until you tell me to close it.`;
+      const missed = unknown.length ? ` I don't have a layer called ${speakList(unknown)}.` : "";
+      return { text: opened + missed };
+    },
+  },
+  {
+    name: "osiris_layers",
+    description:
+      "Turn layers on or off on the Osiris grid, or report which are showing. Layers include flights, private jets, military flights, ships, satellites, cameras, live news, earthquakes, fires, weather, radiation, infrastructure, conflict zones, undersea cables, day/night, terrain, malware and cyber attacks. Use when the user asks to add, remove, or check something on the world map. Opens the grid first if it isn't up.",
+    schema: {
+      on: z.array(z.string()).optional().describe("Layers to switch on, keeping what's already showing."),
+      off: z.array(z.string()).optional().describe("Layers to switch off."),
+      only: z.array(z.string()).optional().describe("Show exactly these and nothing else."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const osiris = await import("../osiris.js");
+      const { resolveLayers, speakList, openingLayers } = await import("./osiris-intel.js");
+
+      const wanted = resolveLayers(a.only ?? []);
+      const add = resolveLayers(a.on ?? []);
+      const drop = resolveLayers(a.off ?? []);
+      const unknown = [...wanted.unknown, ...add.unknown, ...drop.unknown];
+
+      // "Only show X" where X isn't a layer must not be read as "show nothing" —
+      // clearing the globe is the opposite of what was asked for.
+      if (a.only && !wanted.ids.length) {
+        return { text: `I don't have a layer called ${speakList(unknown.length ? unknown : a.only)}, so I've left the grid as it is.` };
+      }
+
+      if (!osiris.isOsirisOpen()) {
+        const start = a.only ? wanted.ids : [...new Set([...openingLayers(), ...add.ids])].filter((id) => !drop.ids.includes(id));
+        if (!start.length && !add.ids.length && !wanted.ids.length) {
+          return { text: "The Osiris grid isn't open — say the word and I'll put it on screen." };
+        }
+        await osiris.openOsirisPanel({ layers: start });
+        return { text: `Opening the Osiris grid showing ${speakList(start)}.` };
+      }
+
+      // If the page's URL can't be read, assume what Echo opened it with.
+      const current = (await osiris.currentLayers()) ?? openingLayers();
+      if (!a.on && !a.off && !a.only) {
+        return {
+          text: current.length
+            ? `The grid is showing ${speakList(current)}.`
+            : "The grid is showing a bare globe — no layers on.",
+        };
+      }
+
+      const next = a.only
+        ? wanted.ids
+        : [...new Set([...current, ...add.ids])].filter((id) => !drop.ids.includes(id));
+      const result = await osiris.applyLayers(next);
+
+      const missed = unknown.length ? ` I don't have a layer called ${speakList(unknown)}.` : "";
+      if (result === "failed" || result === "closed") {
+        return {
+          text: `The grid wouldn't take that change just now — it's still showing ${speakList(current)}.` + missed,
+        };
+      }
+      const lead = result === "pending" ? "Switching to" : "Now showing";
+      return {
+        text: (next.length ? `${lead} ${speakList(next)}.` : "Clearing the grid down to a bare globe.") + missed,
+      };
+    },
+  },
+  {
+    name: "osiris_intel",
+    description:
+      "Read a live Osiris intelligence feed and answer out loud — earthquakes, air traffic, fires, the OSINT news feed, satellites, conflict zones, space weather, severe weather, cyber threats, or an overall grid status. Use whenever the user asks what's happening in the world, whether anything has happened (a quake, a fire, a conflict), or for a world briefing. This reads data and does not need the panel open.",
+    schema: {
+      feed: z
+        .string()
+        .describe("Which feed: status, earthquakes, flights, fires, news, satellites, conflicts, space_weather, weather, or cyber."),
+    },
+    readOnly: true,
+    handler: async (a) => {
+      const { resolveFeed, osirisFetch, summarize, activeBase, FEEDS } = await import("./osiris-intel.js");
+      const feed = resolveFeed(a.feed ?? "status");
+      if (!feed) {
+        return { text: `I don't have a feed called "${a.feed}". I can read ${FEEDS.map((f) => f.id).join(", ")}.` };
+      }
+
+      // When the panel is up, its page is the fallback route to the API: a
+      // deployment that answers a plain server-side request with a bot check
+      // answers the browser that already cleared it.
+      const osiris = await import("../osiris.js");
+      const base = osiris.osirisBase() ?? (await activeBase());
+      const relay = osiris.isOsirisOpen() ? osiris.relayFetch : undefined;
+
+      let data: any;
+      try {
+        data = await osirisFetch(feed.path, { base, relay });
+      } catch (e: any) {
+        return { text: `I couldn't read the ${feed.label} feed — ${e?.message ?? e}.` };
+      }
+
+      const summary = summarize(feed.id, data);
+      sendToOverlay("show-data-pane", {
+        title: `OSIRIS · ${feed.label.toUpperCase()}`,
+        content: summary.html,
+        duration: 30000,
+      });
+      return { text: summary.speech };
+    },
+  },
+  {
+    name: "osiris_focus",
+    description:
+      "Point the Osiris globe at a place — a city, country, region or landmark. Use when the user asks to look at somewhere specific on the world map ('show me Ukraine', 'zoom into Tokyo'). Opens the grid first if it isn't up.",
+    schema: {
+      place: z.string().describe("Where to look — a place name, as spoken."),
+      lat: z.number().optional().describe("Exact latitude, if known."),
+      lng: z.number().optional().describe("Exact longitude, if known."),
+      zoom: z.number().optional().describe("Zoom level, 2 (whole globe) to 12 (a city block). Defaults to 6."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const osiris = await import("../osiris.js");
+      const { osirisFetch, activeBase } = await import("./osiris-intel.js");
+      const place = String(a.place ?? "").trim();
+
+      if (!osiris.isOsirisOpen()) {
+        await osiris.openOsirisPanel({});
+        // The globe needs to exist before the camera can be told to move.
+        await new Promise((r) => setTimeout(r, 6000));
+      }
+
+      let coords =
+        Number.isFinite(a.lat) && Number.isFinite(a.lng)
+          ? { lat: a.lat as number, lng: a.lng as number, zoom: a.zoom }
+          : undefined;
+
+      // Osiris geocodes with its own search service, so a place Echo resolves
+      // this way is the same place its search box would have found.
+      if (!coords && place) {
+        try {
+          const base = osiris.osirisBase() ?? (await activeBase());
+          const found = await osirisFetch(`/api/geosearch?q=${encodeURIComponent(place)}`, {
+            base,
+            timeoutMs: 12000,
+            relay: osiris.isOsirisOpen() ? osiris.relayFetch : undefined,
+          });
+          const hit = found?.results?.[0];
+          if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+            coords = { lat: hit.lat, lng: hit.lng, zoom: a.zoom };
+          }
+        } catch {
+          /* the search-box route below doesn't need coordinates */
+        }
+      }
+
+      const route = await osiris.focusOsiris(place, coords);
+      if (route === "map") return { text: `Bringing ${place || "that position"} up on the grid.` };
+      if (route === "search") return { text: `Searching the grid for ${place} and flying there.` };
+      return { text: `The grid is open, but I couldn't move the camera to ${place || "there"} from here.` };
+    },
+  },
+  {
+    name: "show_neural_core",
+    description:
+      "Open (or close) a 3D visual of Echo's own neural core — a spiral galaxy with a glowing core and clusters of data orbiting it. Use when the user asks to see your core, your neural schema, your mind, your brain, or 'show me your galaxy'.",
+    schema: {
+      show: z.boolean().optional().describe("true to open (default), false to close."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const { openNeuralCore, closeNeuralCore } = await import("../neural.js");
+      if (a.show === false) {
+        closeNeuralCore();
+        return { text: "Closed the neural core." };
+      }
+      openNeuralCore();
+      return { text: "This is my neural core — a galaxy of the data I hold, turning around its centre." };
     },
   },
   {
@@ -1184,7 +1744,10 @@ TOOLS.push(
           if (stdout) output += `STDOUT:\n${stdout}\n`;
           if (stderr) output += `STDERR:\n${stderr}\n`;
           if (error) output += `ERROR:\n${error.message}\n`;
-          resolve({ text: output.trim() || "Command executed successfully with no output." });
+          resolve({ text: output.trim() || "Command executed successfully with no output.",
+            status: error ? "failed" : "success", verification: "unverified",
+            data: { exitCode: error?.code ?? 0, stdout, stderr },
+            ...(error ? { error: { category: "process_exit", message: error.message, retryable: false } } : {}) });
         });
       });
     },
@@ -1200,9 +1763,9 @@ TOOLS.push(
     handler: async (a) => {
       try {
         writeFileSync(a.path, a.content, "utf8");
-        return { text: `Wrote ${a.content.length} characters to ${a.path}` };
+        return { text: `Wrote ${a.content.length} characters to ${a.path}`, status: "success", verification: "unverified", data: { path: a.path, characters: a.content.length } };
       } catch (err: any) {
-        return { text: `Failed to write file: ${err.message}` };
+        return { text: `Failed to write file: ${err.message}`, status: "failed", error: { category: "filesystem", message: err.message }, verification: "unverified" };
       }
     },
   },
@@ -1218,7 +1781,7 @@ TOOLS.push(
         const text = readFileSync(a.path, "utf8");
         return { text: text.slice(0, 10000) }; // prevent massive overflow
       } catch (err: any) {
-        return { text: `Failed to read file: ${err.message}` };
+        return { text: `Failed to read file: ${err.message}`, status: "failed", error: { category: "filesystem", message: err.message }, verification: "unverified" };
       }
     },
   },
@@ -1380,35 +1943,28 @@ TOOLS.push(
   },
   {
     name: "delegate_task",
-    description: "Multi-Agent Swarm: Delegate a massive background task to an independent LLM agent clone. Jarvis will spawn a background worker that completes the task and writes the result to a file.",
+    description: "Delegate a background task to a durable, named Echo clone. The clone is logged and resumes from its checkpoint after an unexpected stop.",
     schema: {
       agentName: z.string().describe("The name of the sub-agent (e.g. 'Jarvis-Worker-1')."),
       taskDescription: z.string().describe("The complex task for the sub-agent to perform."),
     },
     readOnly: false,
     handler: async (a) => {
-      const prompt = `You are ${a.agentName}, an independent sub-agent of Jarvis. Your task is: ${a.taskDescription}`;
-      
-      // Spawn a background node process that calls Ollama or Claude
-      const script = `
-        const fs = require('fs');
-        fetch("http://localhost:11434/api/generate", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ model: "llama3.2:3b", prompt: \`${prompt.replace(/`/g, "\\`")}\`, stream: false })
-        }).then(r => r.json()).then(d => {
-          fs.writeFileSync("/tmp/${a.agentName}.txt", "Task complete:\\n" + d.response);
-        }).catch(e => fs.writeFileSync("/tmp/${a.agentName}.txt", "Error: " + e.message));
-      `;
-      
-      const tmpPath = `/tmp/${a.agentName}_script.js`;
-      writeFileSync(tmpPath, script, "utf8");
-      
-      // Run it detached
-      const p = spawn("node", [tmpPath], { detached: true, stdio: 'ignore' });
-      p.unref();
-      
-      return { text: `Successfully spawned ${a.agentName}. The agent is working in the background and will save results to /tmp/${a.agentName}.txt.` };
+      const { loadConfig } = await import("../config.js");
+      const { createBrain } = await import("../brain/index.js");
+      const { swarm } = await import("../frontier/swarm.js");
+      const cfg = loadConfig(appRoot());
+      const goal = `${a.taskDescription}\nRequested worker label: ${a.agentName}`;
+      const result = swarm.spawn(goal, {
+        makeBrain: (identity, task) => createBrain(cfg, {
+          identity,
+          maxRecoveryAttempts: task?.budget.maxRecoveryAttempts,
+          limits: { maxIterations: task?.budget.maxIterations },
+        }).brain as any,
+      });
+      return result.ok
+        ? { text: `${result.name} started. Its full run log and recovery checkpoint are active.` }
+        : { text: `The clone was not started: ${result.reason ?? "unknown reason"}.` };
     },
   },
   {
@@ -1517,12 +2073,25 @@ TOOLS.push(
   },
   {
     name: "switch_brain",
-    description: "Switch Jarvis's brain between Claude, Gemini, and Ollama (Llama 3), and instantly restart the application to apply the change. Use this when the user asks you to switch models or brains.",
+    description: "Switch Echo's brain between Claude, Gemini, and Ollama (the local model). The swap happens live — no restart — though it does start a fresh conversation on the new brain. Use this when the user asks you to switch models or brains.",
     schema: {
       brain: z.enum(["claude", "gemini", "ollama"]).describe("Which brain to use"),
     },
     readOnly: false,
     handler: async (a) => {
+      // The live swap lives in the main process, reached through the same kind
+      // of global the brain itself is — importing main.ts here would be a cycle.
+      // A tool cannot simply return after replacing the brain that is running
+      // it, so the loop is told this exit was deliberate, exactly as the old
+      // restart path did.
+      const swap = (globalThis as any).__switchBrain as ((p: string) => Promise<string>) | undefined;
+      if (typeof swap === "function") {
+        currentLoop()?.exit("abort_signal", { detail: `switch_brain to ${a.brain} — swapping the brain live` });
+        return { text: await swap(a.brain) };
+      }
+
+      // Fallback for a build where the main process never registered the swap
+      // (tests, tooling): the original config-rewrite-and-relaunch.
       const configPath = join(appRoot(), "config.json");
       if (!existsSync(configPath)) {
         return { text: "config.json not found." };
@@ -1533,6 +2102,13 @@ TOOLS.push(
         config.brain = a.brain;
         writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
         
+        // A tool that kills the process looks identical to the silent-stop bug
+        // from the outside: the log just ends. Say on the way out that this was
+        // deliberate, so a reader is not left guessing which of the two it was.
+        currentLoop()?.exit("abort_signal", {
+          detail: `switch_brain to ${a.brain} — restarting the app on purpose`,
+        });
+
         setTimeout(() => {
           // app.exit() force-terminates without firing will-quit, so tear down
           // here or this path orphans the camera helpers, the whisper server and
@@ -1555,7 +2131,7 @@ TOOLS.push(
   {
     name: "read_screen_text",
     description:
-      "Read all the text currently on screen using fast on-device OCR — no image is sent anywhere and it costs nothing, so prefer this over screenshot when you only need to READ what is displayed (an error message, a value, what an app is showing). Each line comes with the coordinates to click it, which also lets you click text in apps that expose no accessibility tree, like Chrome and Brave. Use screenshot only when you need to see layout, images, or colours.",
+      "FIRST choice when you need to READ something rather than click it. Reads the text on screen with on-device OCR. Nothing leaves the machine and no image enters the conversation, so prefer this over screenshot whenever you only need to READ something: an error, a value, a status, what an app is currently showing. Every line comes back with coordinates, which is also how you click inside Chrome and Brave, whose contents the accessibility tree cannot see. Use screenshot only for layout, colour or images.",
     schema: {
       fast: z.boolean().default(false).describe("Leave this false. Fast mode roughly halves accuracy (measured 0.51 vs 0.95 confidence, garbling words) and is only fit for detecting that the screen changed — never for reading or clicking."),
     },
@@ -1588,18 +2164,20 @@ TOOLS.push(
         return { text: "There's nothing readable on screen to scan right now." };
       }
       const saved = await scan.commitScan({ text, app, title, pngBase64: png });
-      return { text: scan.offerFor(saved) };
+      const handle = putHandoff("scan", { scanId: saved.id }, { ttlMs: 30 * 60_000 });
+      return { text: scan.offerFor(saved) + ` Scan handle: ${handle.id}.`, data: { scanId: saved.id, handleId: handle.id } };
     },
   },
   {
     name: "save_last_scan",
     description:
       "Save the most recently scanned page to the Desktop. Use this when the user answers yes to the offer after scan_page, or says 'save that', 'put it on my desktop', 'save the PDF'. Saves the real file when the scan was a document, otherwise the captured text or image.",
-    schema: {},
+    schema: { handleId: z.string().optional().describe("The scan handle returned by scan_page.") },
     readOnly: false,
-    handler: async () => {
-      const last = scan.lastScan();
-      if (!last) return { text: "I don't have a recent scan to save. Ask me to scan the page first." };
+    handler: async (a) => {
+      const handle = readHandoff<{ scanId: string }>("scan", { id: a.handleId });
+      const last = handle ? scan.loadScans().find(item => item.id === handle.value.scanId) : undefined;
+      if (!last) return { status: "failed", text: "This task has no current scan handle. Ask me to scan the page first." };
       try {
         const dest = await scan.saveScanToDesktop(last);
         return { text: `Saved to ${dest.replace(process.env.HOME ?? "", "~")}.` };
@@ -1624,7 +2202,7 @@ TOOLS.push(
   {
     name: "click_text",
     description:
-      "Click on-screen text by what it says, located with OCR. This is the fallback for clicking inside Chrome, Brave and other apps whose contents the accessibility tree cannot see. Give the visible words.",
+      "Click on-screen text by the words visible on it, located with OCR. SECOND choice for clicking, and the one that works inside Chrome, Brave, canvas apps and anything else the accessibility tree cannot see. Give the words exactly as they are displayed.",
     schema: { text: z.string().describe("The visible text to click on") },
     readOnly: false,
     handler: async (a) => {
@@ -2029,7 +2607,13 @@ TOOLS.push(
       for (const goal of goals) {
         // Each clone is its own background brain; the swarm caps concurrency so
         // they can't trample each other over the single mouse and keyboard.
-        const r = swarm.spawn(String(goal), { makeBrain: () => createBrain(cfg).brain as any });
+        const r = swarm.spawn(String(goal), {
+          makeBrain: (identity, task) => createBrain(cfg, {
+            identity,
+            maxRecoveryAttempts: task?.budget.maxRecoveryAttempts,
+            limits: { maxIterations: task?.budget.maxIterations },
+          }).brain as any,
+        });
         if (r.ok) spawned++;
         else refusal = r.reason ?? "refused";
       }
@@ -2037,6 +2621,88 @@ TOOLS.push(
       if (refusal) msg += ` ${goals.length - spawned} not started (${refusal}).`;
       return { text: msg.trim() || "Nothing to spawn." };
     }
+  },
+  {
+    name: "run_agent_mission",
+    description:
+      "Start a durable multi-agent Mission with dependencies, acceptance criteria, focused execution lanes, and hard budgets. Use for substantial work that benefits from research or preparation before a later Agent Task. Knowledge tasks may run in parallel; GUI tasks are serialized because they share one pointer and keyboard. Returns immediately with a Mission ID for inspect_agent_mission.",
+    schema: {
+      goal: z.string().min(1).describe("The overall user outcome"),
+      tasks: z.array(z.object({
+        id: z.string().regex(/^[a-zA-Z0-9_.-]+$/),
+        goal: z.string().min(1),
+        dependsOn: z.array(z.string()).default([]),
+        lane: z.enum(["knowledge", "gui"]).default("knowledge"),
+        acceptanceCriteria: z.array(z.string()).default([]),
+        profile: z.string().optional().describe("A short specialist name, such as Researcher or Verifier"),
+        timeoutMs: z.number().int().min(1_000).max(3_600_000).default(600_000),
+        maxIterations: z.number().int().min(1).max(200).default(50),
+        maxRecoveryAttempts: z.number().int().min(0).max(5).default(2),
+      })).min(1).max(50),
+    },
+    readOnly: false,
+    handler: async (args) => {
+      const { loadConfig } = await import("../config.js");
+      const { createBrain } = await import("../brain/index.js");
+      const { swarm } = await import("../frontier/swarm.js");
+      const cfg = loadConfig(appRoot());
+      const result = swarm.submitMission({
+        goal: args.goal,
+        scope: { ...(await memoryScope()) },
+        tasks: args.tasks.map((task: any) => ({
+          id: task.id,
+          goal: task.goal,
+          dependsOn: task.dependsOn,
+          lane: task.lane,
+          acceptanceCriteria: task.acceptanceCriteria,
+          profile: task.profile,
+          budget: {
+            timeoutMs: task.timeoutMs,
+            maxIterations: task.maxIterations,
+            maxRecoveryAttempts: task.maxRecoveryAttempts,
+          },
+        })),
+      }, {
+        makeBrain: (identity, task) => createBrain(cfg, {
+          identity,
+          maxRecoveryAttempts: task?.budget.maxRecoveryAttempts,
+          limits: { maxIterations: task?.budget.maxIterations },
+        }).brain as any,
+      });
+      return result.ok
+        ? { text: `Mission ${result.missionId} started with ${args.tasks.length} Agent Task(s). Use inspect_agent_mission to read its Results.`, data: result }
+        : { text: `Mission was not started: ${result.reason}`, status: "failed", data: result };
+    },
+  },
+  {
+    name: "inspect_agent_mission",
+    description: "Read current Agent Task states and structured Results for one Mission, or list recent Missions when no ID is supplied.",
+    schema: { missionId: z.string().optional() },
+    readOnly: true,
+    handler: async (args) => {
+      const { swarm } = await import("../frontier/swarm.js");
+      if (!args.missionId) {
+        const missions = swarm.listMissions();
+        return { text: missions.length ? JSON.stringify(missions, null, 2) : "No Missions are active in this process.", data: { missions } };
+      }
+      const mission = swarm.getMission(args.missionId);
+      return mission
+        ? { text: JSON.stringify(mission, null, 2), data: { mission } }
+        : { text: `Mission ${args.missionId} was not found in this process.`, status: "failed" };
+    },
+  },
+  {
+    name: "cancel_agent_mission",
+    description: "Cancel a running Mission and all of its pending or active Agent Tasks.",
+    schema: { missionId: z.string().min(1) },
+    readOnly: false,
+    handler: async (args) => {
+      const { swarm } = await import("../frontier/swarm.js");
+      const cancelled = swarm.cancelMission(args.missionId);
+      return cancelled
+        ? { text: `Mission ${args.missionId} cancelled.` }
+        : { text: `Mission ${args.missionId} is not running or was not found.`, status: "failed" };
+    },
   },
   {
     name: "read_changelog",
@@ -2112,8 +2778,6 @@ TOOLS.push(
     }
   }
 );
-
-export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
 
 TOOLS.push({
   name: 'adjust_brightness',
@@ -2237,7 +2901,7 @@ TOOLS.push(
     name: "send_message",
     description: "Send a message to another active agent (Main or a Clone). Use this for Swarm Intelligence.",
     schema: {
-      recipient: z.string().describe("The name of the recipient (e.g., 'Main' or 'Echo-clone 1')."),
+      recipient: z.string().describe("The name of the recipient (e.g., 'Main' or 'Echo Clone 1')."),
       message: z.string().describe("The message content.")
     },
     readOnly: false,
@@ -2248,9 +2912,8 @@ TOOLS.push(
         g.__mainBrain.send(`[Message from Clone]: ${a.message}`);
         return { text: "Message sent to Main." };
       }
-      const clones = g.__activeClones;
-      if (clones && clones.has(a.recipient)) {
-        clones.get(a.recipient).brain.send(`[Message from Clone]: ${a.message}`);
+      const { swarm } = await import("../frontier/swarm.js");
+      if (swarm.send(a.recipient, a.message)) {
         return { text: `Message sent to ${a.recipient}.` };
       }
       return { text: `Recipient '${a.recipient}' not found.` };
@@ -2323,7 +2986,12 @@ TOOLS.push(
       const intervalMs = Math.max(1000, a.intervalSeconds * 1000);
       
       const timer = setInterval(() => {
-        const { brain: subBrain } = createBrain(cfg);
+        const identity = {
+          id: `scheduled_${cronId}_${Date.now()}`,
+          name: `Echo Scheduled ${cronId}`,
+          kind: "scheduled" as const,
+        };
+        const { brain: subBrain } = createBrain(cfg, { identity });
         subBrain.send(`[SYSTEM: CRON TRIGGER] Your recurring task is: ${a.goal}. When finished, remember to save results.`);
       }, intervalMs);
       
@@ -2340,13 +3008,8 @@ TOOLS.push(
     },
     readOnly: false,
     handler: async (a) => {
-      const g = global as any;
-      if (g.__activeClones && g.__activeClones.has(a.cloneName)) {
-        const data = g.__activeClones.get(a.cloneName);
-        data.progress = a.progress;
-        
-        const { sendToOverlay } = await import("../overlay.js");
-        sendToOverlay("clones", (Array.from(g.__activeClones.entries()) as [string, any][]).map(([n, d]: [string, any]) => ({ name: n, progress: d.progress })));
+      const { swarm } = await import("../frontier/swarm.js");
+      if (swarm.updateProgress(a.cloneName, a.progress)) {
         return { text: "Progress updated on HUD." };
       }
       return { text: "Clone not found in active list." };
@@ -2485,7 +3148,120 @@ TOOLS.push(
       const out = a.prefix ? prefetch.complete(a.prefix) : a.after ? prefetch.predictNext(a.after) : [];
       return { text: out.length ? `You often follow with:\n${out.map((c) => `• ${c}`).join("\n")}` : "No confident prediction yet." };
     }
+  },
+  {
+    name: "set_hud_skin",
+    description:
+      "Change which reactor the on-screen HUD shows. 'classic' is the round coil reactor drawn in CSS; 'mark50' is the triangular chest reactor; 'jarvis' is the segmented J.A.R.V.I.S interface reactor. Use when the user asks to change how you look, switch the reactor, or asks for a specific one by name. Pass no skin to report the current one.",
+    schema: {
+      skin: z
+        .enum(["classic", "mark50", "jarvis"])
+        .optional()
+        .describe("Which reactor to show. Omit to report what is showing now."),
+    },
+    readOnly: false,
+    handler: async (a) => {
+      const { sendHudState } = await import("../frontier/hudstate.js");
+      const configPath = join(appRoot(), "config.json");
+
+      let config: any = {};
+      if (existsSync(configPath)) {
+        try {
+          config = JSON.parse(readFileSync(configPath, "utf8"));
+        } catch {
+          /* a broken config should not stop the HUD from changing */
+        }
+      }
+      const current = config?.hud?.skin ?? "classic";
+      const SKIN_NAMES: Record<string, string> = { classic: "classic", mark50: "Mark 50", jarvis: "J.A.R.V.I.S" };
+      const nameOf = (skin: string) => SKIN_NAMES[skin] ?? skin;
+
+      if (!a.skin) {
+        return { text: `Currently showing the ${nameOf(current)} reactor.` };
+      }
+      if (a.skin === current) {
+        return { text: `Already showing the ${nameOf(a.skin)} reactor.` };
+      }
+
+      // Change what is on screen first — the HUD should respond immediately,
+      // whether or not the config can be written.
+      sendHudState({ skin: a.skin });
+
+      // Then remember it, so it survives a restart. No relaunch needed: the
+      // renderer swaps skins live.
+      let saved = true;
+      try {
+        config.hud = { ...(config.hud ?? {}), skin: a.skin };
+        writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+      } catch {
+        saved = false;
+      }
+
+      const name = nameOf(a.skin);
+      return {
+        text: saved
+          ? `Switched to the ${name} reactor.`
+          : `Switched to the ${name} reactor for now — I couldn't save it, so it will revert on restart.`,
+      };
+    },
   }
 );
 
+TOOLS.push({
+  name: "submit_agent_result",
+  description:
+    "Finish the current delegated Agent Task with a structured Result. A normal reply is not completion. Use completed only when verificationRefs contains direct evidence that the acceptance criteria passed; otherwise use partial, blocked, or failed and explain what remains.",
+  schema: {
+    status: z.enum(["completed", "partial", "blocked", "failed", "cancelled"]),
+    summary: z.string().min(1).describe("Concise outcome for the parent Mission"),
+    artifacts: z.array(z.object({
+      kind: z.enum(["text", "file", "url", "data"]),
+      label: z.string().min(1),
+      value: z.string(),
+    })).default([]).describe("Durable outputs produced by the Agent Task"),
+    verificationRefs: z.array(z.string()).default([]).describe("Evidence references proving acceptance criteria; required for completed"),
+    blockers: z.array(z.string()).default([]).describe("Anything preventing full completion"),
+  },
+  readOnly: false,
+  handler: async (args) => {
+    const invocation = currentInvocation();
+    const taskId = invocation?.taskId ?? owningTaskId();
+    if (!taskId || !invocation?.actorId) {
+      return { text: "No active delegated Agent Task is available for a Result.", status: "failed" };
+    }
+    const delegated = taskCoordinator.get(taskId);
+    if (!delegated?.parentTaskId?.startsWith("mission.")) {
+      return { text: "Only an Agent Task inside a Mission can submit a delegated Result.", status: "failed" };
+    }
+    const state = taskCoordinator.submitResult(taskId, invocation.actorId, {
+      status: args.status,
+      summary: args.summary,
+      artifacts: args.artifacts ?? [],
+      verificationRefs: args.verificationRefs ?? [],
+      blockers: args.blockers ?? [],
+    });
+    return {
+      text: `Result accepted for ${taskId}: ${state.result?.status} — ${state.result?.summary}`,
+      status: "success",
+      verification: state.result?.status === "completed" ? "verified" : "unverified",
+      data: { result: state.result },
+    };
+  },
+});
+
 // --- END OF REGISTRY INJECTION POINT ---
+
+/**
+ * Name -> tool, for the loops that dispatch by name.
+ *
+ * Built HERE, at the bottom, and not one line earlier. It used to sit in the
+ * middle of the file, above the ten tools that are appended with TOOLS.push()
+ * below it — so those ten were declared to every model and then missing from
+ * the map that runs them. Under Ollama, which dispatches through this map,
+ * calling one answered "No such tool: adjust_brightness" for a tool that is
+ * very much there.
+ *
+ * _wiringtest asserts this map covers the registry, so appending a tool after
+ * this line fails a test instead of going quiet.
+ */
+export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));

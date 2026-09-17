@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self';" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ECHO — Desktop Intelligence</title>
+    <link rel="stylesheet" href="control-panel.css" />
+  </head>
+  <body data-status="idle">
+    <svg class="svg-symbols" aria-hidden="true">
+      <defs>
+        <symbol id="icon-wave" viewBox="0 0 24 24"><path d="M3 10v4M7 7v10m5-14v18m5-15v12m4-8v4" /></symbol>
+        <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></symbol>
+        <symbol id="icon-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M6 10v2a6 6 0 0 0 12 0v-2m-6 8v4m-3 0h6" /></symbol>
+        <symbol id="icon-network" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2" /><circle cx="18" cy="5" r="2" /><circle cx="5" cy="18" r="2" /><circle cx="19" cy="18" r="2" /><circle cx="12" cy="12" r="2" /><path d="m7 7 4 4m3-1 3-3M7 17l4-4m3 0 4 4" /></symbol>
+        <symbol id="icon-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3" /><circle cx="12" cy="12" r=".7" /></symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24"><path d="m10 3 4 0 1 3 3-1 2 3-2 2 3 2-1 4-3 0-1 3-4-1-2 3-3-2 1-3-3-1 0-4 3-1-1-3 3-2Z" /><circle cx="12" cy="12" r="3" /></symbol>
+        <symbol id="icon-close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></symbol>
+        <symbol id="icon-file" viewBox="0 0 24 24"><path d="M5 3h9l5 5v13H5zM14 3v6h5M8 12h8M8 16h6" /></symbol>
+        <symbol id="icon-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5" /></symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="m7 12 3 3 7-7" /></symbol>
+        <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19Z" /><path d="M12 9v5m0 3v.1" /></symbol>
+        <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></symbol>
+        <symbol id="icon-brain" viewBox="0 0 24 24"><path d="M10 4C6 0 4 5 5 8c-5 1-3 7 0 7-2 5 3 8 6 5V5m3-1c4-4 6 1 5 4 5 1 3 7 0 7 2 5-3 8-5 5V5M5 8l4 2m-4 5 4-1m10-6-3 2m3 5-3-1" /></symbol>
+        <symbol id="icon-agent" viewBox="0 0 24 24"><path d="M8 5h8l3 4v8l-3 3H8l-3-3V9Z" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><path d="M9 16h6M12 5V2" /></symbol>
+        <symbol id="icon-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1" /><path d="M9 21h6m-3-4v4" /></symbol>
+        <symbol id="icon-route" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2" /><circle cx="19" cy="5" r="2" /><circle cx="18" cy="19" r="2" /><path d="M7 6h4c5 0 2 6 6 6h1M7 6c4 0 2 13 9 13" /></symbol>
+        <symbol id="icon-plug" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-6 6v4m-3 0h6" /></symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="m5 4 16 8-16 8 4-8Z" /></symbol>
+        <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></symbol>
+        <symbol id="icon-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8v10h-6v-6H9v6H3Z" /></symbol>
+        <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" /></symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-3L3 8m1-5v5h5M4 16a8 8 0 0 0 14 3l3-3m-1 5v-5h-5" /></symbol>
+        <symbol id="icon-location" viewBox="0 0 24 24"><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></symbol>
+      </defs>
+    </svg>
+
+    <main class="control-shell" aria-label="Echo intelligence control panel">
+      <header class="topbar">
+        <button class="brand" type="button" data-view="overview" aria-label="Open live overview">
+          <span class="brand-core" aria-hidden="true"><i></i></span>
+          <span class="brand-copy"><strong>ECHO</strong><small>Desktop Intelligence</small></span>
+        </button>
+
+        <nav class="quick-controls" aria-label="Echo controls">
+          <button class="quick-control accent" data-action="listen" type="button"><span class="control-ring"><svg><use href="#icon-wave" /></svg></span><small>Listen</small></button>
+          <button class="quick-control" data-action="interrupt" type="button"><span class="control-ring"><svg><use href="#icon-stop" /></svg></span><small>Stop</small></button>
+          <button id="voice-toggle" class="quick-control" data-action="toggle-voice" type="button"><span class="control-ring"><svg><use href="#icon-mic" /></svg></span><small>Voice</small></button>
+          <button class="quick-control" data-action="neural" type="button"><span class="control-ring"><svg><use href="#icon-network" /></svg></span><small>Neural Map</small></button>
+          <button class="quick-control" data-action="osiris" type="button"><span class="control-ring"><svg><use href="#icon-orbit" /></svg></span><small>Osiris</small></button>
+          <button class="quick-control" data-action="settings" type="button"><span class="control-ring"><svg><use href="#icon-settings" /></svg></span><small>Settings</small></button>
+          <button id="panel-close" class="quick-control close-control" type="button" aria-label="Close intelligence control"><span class="control-ring"><svg><use href="#icon-close" /></svg></span><small>Close</small></button>
+        </nav>
+      </header>
+
+      <section id="overview-view" class="view overview-view active" data-view-panel="overview">
+        <aside class="activity-pane">
+          <div class="section-title"><h1>Live Activity</h1><span class="live-state"><i></i>Live</span></div>
+          <div id="live-log" class="activity-list" aria-live="polite"><div class="empty-state">Waiting for live activity…</div></div>
+        </aside>
+
+        <section class="core-stage" aria-label="Echo core status">
+          <div class="core-crosshair" aria-hidden="true"></div>
+          <div class="core-label"><span id="core-status">STANDBY</span><small id="active-model">Resolving route</small></div>
+          <div id="panel-core" class="panel-core" aria-label="Live Echo JARVIS reactor">
+            <div class="core-aura"></div>
+            <img class="core-layer core-base" src="../assets/reactor-jarvis.png" alt="Echo JARVIS core" />
+            <img class="core-layer core-mid" src="../assets/reactor-jarvis-mid.png" alt="" aria-hidden="true" />
+            <img class="core-layer core-outer" src="../assets/reactor-jarvis-outer.png" alt="" aria-hidden="true" />
+            <img class="core-layer core-center" src="../assets/reactor-jarvis-core.png" alt="" aria-hidden="true" />
+            <img class="core-layer core-sweep" src="../assets/reactor-jarvis-outer.png" alt="" aria-hidden="true" />
+          </div>
+          <div class="analytics-strip" aria-label="Session analytics">
+            <article><strong id="metric-commands">0</strong><span>Commands</span></article>
+            <article><strong id="metric-tools">0</strong><span>Tool calls</span></article>
+            <article><strong id="metric-completed">0</strong><span>Completed</span></article>
+            <article><strong id="metric-errors">0</strong><span>Errors</span></article>
+          </div>
+        </section>
+
+        <aside class="context-pane">
+          <section class="weather-panel">
+            <div class="weather-place"><span class="weather-glyph" aria-hidden="true"><i></i></span><div><strong id="weather-place">Resolving location…</strong><small id="weather-updated">LIVE WEATHER</small></div><button id="weather-locate" class="bare-icon" type="button" aria-label="Use device location"><svg><use href="#icon-location" /></svg></button></div>
+            <div class="weather-reading"><strong id="weather-temperature">—°</strong><div><span id="weather-condition">Waiting for live conditions</span><small>FEELS <b id="weather-feels">—</b> · HUMIDITY <b id="weather-humidity">—</b> · WIND <b id="weather-wind">—</b></small></div></div>
+            <form id="weather-form" class="weather-search"><input id="weather-query" type="text" placeholder="Search location" autocomplete="off" /><button type="submit">SET</button></form>
+          </section>
+
+          <button class="context-section context-link" type="button" data-view="tasks">
+            <span class="context-heading"><span><i></i>Missions</span><small id="mission-summary-count">0 active</small></span>
+            <span id="mission-summary" class="summary-list"><span class="summary-empty">No missions yet</span></span>
+          </button>
+
+          <button class="context-section context-link" type="button" data-view="tasks">
+            <span class="context-heading"><span><i></i>Agents</span><small id="agent-summary-count">0 connected</small></span>
+            <span id="agent-summary" class="summary-list"><span class="summary-empty">No background agents</span></span>
+          </button>
+
+          <button class="context-section context-link compact" type="button" data-view="models">
+            <span class="context-heading"><span><i></i>Model &amp; Routing</span><small>Open routes</small></span>
+            <span class="route-summary"><span class="summary-icon"><svg><use href="#icon-brain" /></svg></span><span><strong id="route-name">No active route</strong><small id="route-model">Waiting for runtime</small></span><svg class="chevron"><use href="#icon-chevron" /></svg></span>
+          </button>
+
+          <button class="context-section context-link compact connections-summary" type="button" data-view="models">
+            <span class="context-heading"><span><i></i>Tool Connections</span><small id="connection-summary-count">0 configured</small></span>
+            <span id="connection-summary" class="connection-dots"><span class="summary-empty">No external connections</span></span>
+          </button>
+        </aside>
+      </section>
+
+      <section id="tasks-view" class="view operations-view" data-view-panel="tasks" hidden>
+        <aside class="section-nav" aria-label="Control panel sections">
+          <button type="button" data-view="overview"><span class="nav-icon"><svg><use href="#icon-home" /></svg></span><span>Live Overview</span></button>
+          <button class="active" type="button" data-view="tasks"><span class="nav-icon"><svg><use href="#icon-list" /></svg></span><span>Tasks &amp; Agents</span></button>
+          <button type="button" data-view="models"><span class="nav-icon"><svg><use href="#icon-route" /></svg></span><span>Models &amp; Routing</span></button>
+          <div class="session-readout"><span>SESSION UPTIME</span><strong id="metric-uptime">00:00:00</strong></div>
+        </aside>
+
+        <section class="mission-workspace" aria-labelledby="mission-monitor-title">
+          <div class="workspace-heading mission-heading">
+            <div><h1 id="mission-monitor-title">Mission Monitor</h1><p>Dependency-aware work, Results, and verification</p></div>
+            <label class="mission-picker" for="mission-select"><span>Mission</span><select id="mission-select" aria-label="Select a mission"><option value="">No missions</option></select></label>
+          </div>
+          <div id="mission-panel" class="mission-panel" aria-live="polite"><div class="empty-state large"><strong>No agent missions yet</strong><span>Long tasks delegated by Echo will appear here with live execution details.</span></div></div>
+        </section>
+
+        <aside class="operations-rail">
+          <section class="echo-workspace" aria-labelledby="echo-activity-title">
+            <div class="workspace-heading small"><div><h2 id="echo-activity-title">Echo Activity</h2><p id="task-summary-count">0 active</p></div><div id="task-legend" class="task-legend"></div></div>
+            <div id="task-list" class="task-list compact"><div class="empty-state">No Echo task activity in this session.</div></div>
+          </section>
+          <section class="agent-workspace" aria-labelledby="connected-agents-title">
+            <div class="workspace-heading small"><div><h2 id="connected-agents-title">Connected Agents</h2><p id="agent-count">0 / 4 active</p></div></div>
+            <div id="agent-list" class="agent-list"><div class="empty-state">No background agents connected.</div></div>
+            <form id="agent-form" class="agent-form">
+              <label for="agent-target">Assign focused work</label>
+              <select id="agent-target" aria-label="Agent target"><option value="">Deploy a new agent</option></select>
+              <textarea id="agent-goal" rows="3" placeholder="Describe a focused task…"></textarea>
+              <button type="submit"><span>Assign task</span><svg><use href="#icon-arrow" /></svg></button>
+            </form>
+          </section>
+        </aside>
+      </section>
+
+      <section id="models-view" class="view routing-view" data-view-panel="models" hidden>
+        <aside class="activity-pane model-activity">
+          <div class="section-title"><h1>Live Activity</h1><span class="live-state"><i></i>Live</span></div>
+          <div id="routing-log" class="activity-list"><div class="empty-state">Waiting for live activity…</div></div>
+        </aside>
+
+        <section class="route-workspace">
+          <div class="workspace-heading"><div><h1>Models &amp; Routing</h1><p>Choose an available model for Echo’s next request</p></div></div>
+          <div class="subheading"><span>Model Routes</span><small>Changes apply to the active brain</small></div>
+          <div id="model-list" class="model-list"><div class="empty-state large">Reading configured models…</div></div>
+          <div class="subheading connections-heading"><span>MCP Connections</span><button id="refresh-connections" class="refresh-button" type="button"><svg><use href="#icon-refresh" /></svg>Refresh</button></div>
+          <div id="connection-list" class="connection-list"><div class="empty-state">No external MCP servers configured.</div></div>
+        </section>
+
+        <aside class="route-detail">
+          <div class="route-orbit" aria-hidden="true"><span><svg><use href="#icon-brain" /></svg></span><i></i><i></i><i></i></div>
+          <section>
+            <div class="section-title compact-title"><h2>Current Route</h2></div>
+            <div class="current-route"><span class="summary-icon large"><svg><use href="#icon-brain" /></svg></span><div><strong id="current-route-name">No active route</strong><small id="current-route-model">Waiting for runtime</small></div><span class="live-state"><i></i>Active</span></div>
+          </section>
+          <section class="detail-connections">
+            <div class="subheading"><span>Connection State</span><small id="connection-health">0 configured</small></div>
+            <div id="route-connection-list" class="route-connection-list"><div class="empty-state">No connections reported</div></div>
+          </section>
+          <p class="runtime-note">Availability and connection state come directly from Echo’s runtime. Activity appears after a real tool call.</p>
+        </aside>
+      </section>
+
+      <footer class="command-deck">
+        <div class="deck-status"><span><i></i><b id="system-state">INITIALIZING</b></span><small id="clock">--:--:--</small></div>
+        <form id="command-form" class="command-form">
+          <label for="command-input" class="sr-only">Type a command for Echo</label>
+          <input id="command-input" type="text" placeholder="Ask, plan, search, or command…" autocomplete="off" spellcheck="false" />
+          <button id="send-command" type="submit" aria-label="Send command"><svg><use href="#icon-arrow" /></svg></button>
+        </form>
+        <div class="deck-meta"><span id="core-agent-count">0 AGENTS</span><small id="voice-state">VOICE —</small></div>
+        <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+      </footer>
+    </main>
+    <script src="control-panel.js"></script>
+  </body>
+</html>

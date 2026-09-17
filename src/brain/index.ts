@@ -1,7 +1,10 @@
-import { Brain } from "./types.js";
+import { Brain, LOOP_CAPS, type BrainExecutionLimits } from "./types.js";
 import { ClaudeBrain } from "./claude.js";
 import { GeminiBrain } from "./gemini.js";
 import { OllamaBrain } from "./ollama.js";
+import { RecordingBrain, type RecordingBrainOptions } from "../agent-replay/runtime.js";
+import { configuredReplayDirectory, configuredReplayProvider } from "../agent-replay/runtime.js";
+import { RecordedPlaybackBrain } from "../agent-replay/playback-brain.js";
 import { setCliclickBin } from "../tools/computer-actions.js";
 import type { JarvisConfig } from "../config.js";
 
@@ -9,21 +12,61 @@ export { Brain } from "./types.js";
 
 export type Provider = "claude" | "gemini" | "ollama";
 
+export { LOOP_CAPS } from "./types.js";
+
+export type CreateBrainOptions = Pick<
+  RecordingBrainOptions,
+  "identity" | "autoResume" | "maxRecoveryAttempts" | "recoveryDelayMs"
+> & { limits?: BrainExecutionLimits };
+
 /** Build the brain named in config, falling back to Claude if a key is missing. */
-export function createBrain(cfg: JarvisConfig): { brain: Brain; provider: Provider } {
+export function createBrain(cfg: JarvisConfig, options: CreateBrainOptions = {}): { brain: Brain; provider: Provider } {
   setCliclickBin(cfg.control.cliclickBin);
 
-  if (cfg.brain === "gemini") {
+  // The Agent SDK owns Claude's transport and has no cassette/fetch adapter.
+  // Avoid a deceptive "replay" that would still make a live API request: for
+  // Claude recordings Echo replays the recorded session presentation only.
+  const replayDir = configuredReplayDirectory();
+  if (replayDir && configuredReplayProvider() === "claude") {
+    return { brain: new RecordedPlaybackBrain(replayDir), provider: "claude" };
+  }
+
+  // A recording chooses its own adapter. Requiring the user to first switch
+  // config.json to the original provider would make a replay silently diverge.
+  const requestedProvider = (configuredReplayProvider() ?? cfg.brain) as Provider;
+
+  let selected: Brain;
+  let provider: Provider;
+  if (requestedProvider === "gemini") {
     const key = process.env[cfg.gemini.apiKeyEnv];
-    if (key) return { brain: new GeminiBrain(cfg, key), provider: "gemini" };
+    if (key || replayDir) {
+      // The client constructor requires a key-shaped value, but `recordLLM`
+      // returns before the SDK sends a request during replay.
+      selected = new GeminiBrain(cfg, key ?? "replay-no-network", options.limits);
+      provider = "gemini";
+      return {
+        brain: new RecordingBrain(selected, provider, { ...LOOP_CAPS.gemini, maxIterations: options.limits?.maxIterations ?? LOOP_CAPS.gemini.maxIterations, model: cfg.gemini.model }, options),
+        provider,
+      };
+    }
     console.warn(
       `[brain] config selects gemini but ${cfg.gemini.apiKeyEnv} is not set — falling back to Claude.`
     );
   }
 
-  if (cfg.brain === "ollama") {
-    return { brain: new OllamaBrain(cfg, cfg.ollama?.host), provider: "ollama" };
+  if (requestedProvider === "ollama") {
+    selected = new OllamaBrain(cfg, cfg.ollama?.host, options.limits);
+    provider = "ollama";
+    return {
+      brain: new RecordingBrain(selected, provider, { ...LOOP_CAPS.ollama, maxIterations: options.limits?.maxIterations ?? LOOP_CAPS.ollama.maxIterations, model: cfg.ollama?.model }, options),
+      provider,
+    };
   }
 
-  return { brain: new ClaudeBrain(cfg), provider: "claude" };
+  selected = new ClaudeBrain(cfg, options.limits);
+  provider = "claude";
+  return {
+    brain: new RecordingBrain(selected, provider, { ...LOOP_CAPS.claude, maxTurns: options.limits?.maxIterations ?? LOOP_CAPS.claude.maxTurns, model: cfg.claude.model }, options),
+    provider,
+  };
 }

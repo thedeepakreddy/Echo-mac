@@ -105,7 +105,10 @@ async function startOne() {
 
   try {
     const cfg = loadConfig(process.cwd());
-    activeBrain = createBrain(cfg).brain;
+    activeBrain = createBrain(cfg, {
+      identity: { id: "echo-research", name: "Echo Research", kind: "research" },
+      autoResume: false,
+    }).brain;
     // Collect the prose rather than speaking it: nobody is there to hear it,
     // and the point is the file waiting in the morning.
     activeBrain.on("text", (t: string) => {

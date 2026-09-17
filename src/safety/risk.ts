@@ -42,7 +42,7 @@ export function speakable(cmd: string, max = 80): string {
 }
 
 /** Tools that only observe. Nothing here can alter the machine. */
-const READ_ONLY = new Set([
+export const READ_ONLY = new Set([
   "screenshot",
   "get_screen_info",
   "list_ui_elements",
@@ -68,6 +68,8 @@ const READ_ONLY = new Set([
   "list_research_queue",
   "phone_remote_status",
   "search_long_term_memory",
+  // Reading a live Osiris feed is a GET against a public intelligence API.
+  "osiris_intel",
   "search_audio_log",
   "analyze_screen_visually",
   "show_data_pane",
@@ -102,7 +104,7 @@ const READ_ONLY = new Set([
 ]);
 
 /** Tools that act on the UI but stay local and are trivially recoverable. */
-const UI_ACTIONS = new Set([
+export const UI_ACTIONS = new Set([
   "move_mouse",
   "scroll",
   "click",
@@ -115,6 +117,10 @@ const UI_ACTIONS = new Set([
   "open_app",
   "open_url",
   "toggle_orbital_view",
+  "show_osiris",
+  "osiris_layers",
+  "osiris_focus",
+  "show_neural_core",
   "show_creator_page",
   "background_click",
 ]);
@@ -126,6 +132,16 @@ const UI_ACTIONS = new Set([
 const DANGEROUS_SHELL: Array<[RegExp, string]> = [
   [/\brm\s+(-[a-zA-Z]*[rf]|--recursive|--force)/, "delete files recursively"],
   [/\brm\s+/, "delete files"],
+  // Synonyms for rm. Found the hard way: denied `rm` four times, the model
+  // reached for `unlink` on the fifth try and the gate waved it through,
+  // because the list named one command rather than the capability.
+  [/\b(unlink|shred|rmdir)\s+/, "delete files"],
+  [/\btruncate\s+(-s\s*0|--size\s*0)/, "empty a file"],
+  [/\bfind\b[^|]*-(delete|exec\s+rm)\b/, "delete files matched by a search"],
+  [/\bmv\s+[^|]*\s+\/dev\/null\b/, "discard a file by moving it to /dev/null"],
+  // No trailing \b: the method is usually `unlinkSync`/`rmSync`, and a word
+  // boundary after "unlink" never matches when a capital letter follows it.
+  [/\b(python3?|node|ruby|perl)\b[^|]*(os\.remove|os\.unlink|shutil\.rmtree|rmtree|\.unlink|\.rmSync|\.rmdir|File\.delete)/, "delete files through a script"],
   [/\bgit\s+push\b.*(--force|-f\b)/, "force-push, which can overwrite history on the remote"],
   [/\bgit\s+push\b/, "push to a remote"],
   [/\bgit\s+reset\s+--hard/, "hard-reset, discarding uncommitted work"],
@@ -438,7 +454,14 @@ export function classify(
     };
   }
   if (tool === "switch_brain") {
-    return { tier: "medium", reason: `switch my brain to ${firstString(input, ["brain"]) ?? "another model"} and restart` };
+    // No longer a restart — the swap is live. Still worth asking about when the
+    // model reaches for it unprompted, because it ends the conversation it is
+    // in the middle of. A spoken "switch to Gemini" never reaches here: that is
+    // recognised in the main process before any brain sees it.
+    return {
+      tier: "medium",
+      reason: `switch my brain to ${firstString(input, ["brain"]) ?? "another model"}, which starts a new conversation`,
+    };
   }
 
   // ---- sensors and recording ---------------------------------------------

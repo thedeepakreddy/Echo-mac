@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { scrubSecrets } from "../safety/redact.js";
+import { currentAgentRunContext } from "../agent-replay/context.js";
+import { currentInvocation } from "../memory/invocation.js";
+import { captureAllowed, deletionEpoch } from "../memory/capture-policy.js";
 
 const run = promisify(execFile);
 
@@ -61,6 +64,7 @@ export interface Observation {
 export interface StepRow {
   type: "step";
   turn: string;
+  taskId?: string; actorId?: string; callId?: string;
   step: number;
   at: number;
   source: Source;
@@ -80,6 +84,7 @@ export interface StepRow {
 export interface LabelRow {
   type: "label";
   turn: string;
+  taskId?: string; actorId?: string; callId?: string;
   at: number;
   outcome: Outcome;
   why: string;
@@ -91,20 +96,32 @@ export interface LearningOptions {
   enabled: boolean;
   /** Store downscaled screenshots. Off = text observations only, far smaller. */
   captureScreens: boolean;
-  /** Stop recording a runaway turn rather than filling the disk. */
+  /**
+   * Maximum steps to keep from a single turn. Zero means unlimited, which is
+   * the default: a successful task must be saved in full, not as a prefix.
+   * A positive cap is still useful for debugging, but a capped turn is never
+   * exported as a successful demonstration.
+   */
   maxStepsPerTurn: number;
 }
 
 const DEFAULTS: LearningOptions = {
   enabled: false,
   captureScreens: true,
-  maxStepsPerTurn: 60,
+  maxStepsPerTurn: 0,
 };
 
 let opts: LearningOptions = { ...DEFAULTS };
 
 export function configureLearning(patch: Partial<LearningOptions>): void {
-  opts = { ...opts, ...patch };
+  const max = patch.maxStepsPerTurn;
+  opts = {
+    ...opts,
+    ...patch,
+    // A malformed config must not silently turn into a zero-step recorder.
+    maxStepsPerTurn:
+      max === undefined ? opts.maxStepsPerTurn : Number.isFinite(max) && max >= 0 ? Math.floor(max) : 0,
+  };
 }
 
 export function learningEnabled(): boolean {
@@ -122,11 +139,23 @@ interface ActiveTurn {
   /** The most recent thing the model looked at, attached to the next action. */
   observation: Observation | null;
   labelled: boolean;
+  /** A handler failed, so this cannot become a teacher demonstration. */
+  failed: boolean;
+  /** Recording stopped before the task ended due to a configured step cap. */
+  truncated: boolean;
 }
 
-let turn: ActiveTurn | null = null;
-/** Kept after the turn ends so a late "undo that" can still label it. */
-let previous: ActiveTurn | null = null;
+const turns = new Map<string, ActiveTurn>();
+const previousTurns = new Map<string, ActiveTurn>();
+function owner(): string { return currentInvocation()?.taskId ?? currentAgentRunContext()?.taskId ?? "main"; }
+function activeTurn(): ActiveTurn | null {
+  const key = owner();
+  // Main's voice dispatch opens a training turn immediately before the run context exists.
+  if (!turns.has(key) && key !== "main" && currentAgentRunContext()?.identity.kind === "main" && turns.has("main")) {
+    turns.set(key, turns.get("main")!); turns.delete("main");
+  }
+  return turns.get(key) ?? null;
+}
 
 /**
  * Tools whose output IS an observation. Their results become the context the
@@ -167,8 +196,11 @@ let writeChain: Promise<void> = Promise.resolve();
 
 /** Append a row in order. Never throws — losing a row must not disturb the assistant. */
 function enqueueWrite(row: Row): void {
+  if (!captureAllowed()) return;
+  const epoch = deletionEpoch();
   writeChain = writeChain.then(async () => {
     try {
+      if (epoch !== deletionEpoch() || !captureAllowed()) return;
       await ensure();
       await appendFile(dayFile(), JSON.stringify(row) + "\n", "utf8");
     } catch (err) {
@@ -179,7 +211,9 @@ function enqueueWrite(row: Row): void {
 
 /** Run arbitrary work on the same ordered chain, so it interleaves correctly with writes. */
 function enqueue(work: () => Promise<void>): void {
-  writeChain = writeChain.then(work).catch((err) => {
+  if (!captureAllowed()) return;
+  const epoch = deletionEpoch();
+  writeChain = writeChain.then(() => epoch === deletionEpoch() && captureAllowed() ? work() : undefined).catch((err) => {
     console.error("[learn] trajectory task failed:", (err as any)?.message ?? err);
   });
 }
@@ -197,9 +231,12 @@ export function flushTrajectory(): Promise<void> {
  * the real examples many times over.
  */
 export function startTurn(command: string, source: Source, model = ""): void {
-  if (!opts.enabled) return;
-  if (turn && !turn.labelled) finishTurn("success", "superseded by a new command");
-  turn = {
+  if (!opts.enabled || !captureAllowed()) return;
+  const turn = activeTurn();
+  // A new request means the old one did not finish. Calling it a success here
+  // used to leak partial trajectories into the training set.
+  if (turn && !turn.labelled) finishTurn("rejected", "superseded by a new command");
+  turns.set(owner(), {
     id: id(),
     command: command.trim(),
     source,
@@ -207,12 +244,14 @@ export function startTurn(command: string, source: Source, model = ""): void {
     step: 0,
     observation: null,
     labelled: false,
-  };
+    failed: false,
+    truncated: false,
+  });
 }
 
 /** True while a user turn is being recorded. */
 export function recording(): boolean {
-  return opts.enabled && turn !== null;
+  return opts.enabled && captureAllowed() && activeTurn() !== null;
 }
 
 /**
@@ -231,8 +270,11 @@ export function recordStep(input: {
   resultText?: string;
   /** Raw base64 image the tool returned, if any. */
   image?: { data: string; mimeType: string } | null;
+  /** False only when the tool handler threw. Denials use allowed: false. */
+  succeeded?: boolean;
 }): void {
-  if (!opts.enabled || !turn) return;
+  const turn = activeTurn();
+  if (!opts.enabled || !captureAllowed() || !turn) return;
 
   // An undo is the user telling us the previous turn was wrong. Label it before
   // recording anything else, so the signal is not lost if this turn is short.
@@ -240,11 +282,18 @@ export function recordStep(input: {
     labelPrevious("failure", `user called ${input.tool}`);
   }
 
-  if (turn.step >= opts.maxStepsPerTurn) return;
+  if (opts.maxStepsPerTurn > 0 && turn.step >= opts.maxStepsPerTurn) {
+    turn.truncated = true;
+    return;
+  }
+  if (input.succeeded === false) turn.failed = true;
   turn.step += 1;
 
   const row: StepRow = {
     type: "step",
+    taskId: currentInvocation()?.taskId ?? currentAgentRunContext()?.taskId,
+    actorId: currentInvocation()?.actorId ?? currentAgentRunContext()?.identity.id,
+    callId: currentInvocation()?.callId,
     turn: turn.id,
     step: turn.step,
     at: Date.now(),
@@ -390,7 +439,8 @@ const FRESH_FRAME_MS = 1500;
  * discarding its text — the model saw both, so the example should carry both.
  */
 export async function captureGroundingFrame(tool: string): Promise<void> {
-  if (!opts.enabled || !opts.captureScreens || !turn) return;
+  const turn = activeTurn();
+  if (!opts.enabled || !captureAllowed() || !opts.captureScreens || !turn) return;
   if (!GROUNDING_TOOLS.has(tool)) return;
 
   const cur = turn.observation;
@@ -459,21 +509,32 @@ function redact(
 
 /** Record how a turn ended, then close it. */
 export function finishTurn(outcome: Outcome, why = ""): void {
-  if (!opts.enabled || !turn || turn.labelled) return;
+  const turn = activeTurn();
+  if (!opts.enabled || !captureAllowed() || !turn || turn.labelled) return;
+  // The model's normal turn-end event only means it stopped talking; it does
+  // not erase a tool exception or an incomplete recording.
+  if (outcome === "success" && turn.failed) {
+    outcome = "failure";
+    why = why ? `${why}; a tool handler failed` : "a tool handler failed";
+  }
+  if (outcome === "success" && turn.truncated) {
+    outcome = "failure";
+    why = why ? `${why}; recording hit maxStepsPerTurn` : "recording hit maxStepsPerTurn";
+  }
   turn.labelled = true;
   // Only a turn that actually did something is worth a label; a turn where the
   // model just talked has no actions to learn from.
   if (turn.step > 0) {
     enqueueWrite({ type: "label", turn: turn.id, at: Date.now(), outcome, why });
   }
-  previous = turn;
-  turn = null;
+  previousTurns.set(currentAgentRunContext()?.identity.id ?? "main", turn);
+  turns.delete(owner());
 }
 
 /** Relabel the turn before this one — for an undo that arrives late. */
 export function labelPrevious(outcome: Outcome, why: string): void {
   if (!opts.enabled) return;
-  const target = previous ?? turn;
+  const target = previousTurns.get(currentAgentRunContext()?.identity.id ?? "main") ?? activeTurn();
   if (!target || target.step === 0) return;
   enqueueWrite({ type: "label", turn: target.id, at: Date.now(), outcome, why });
 }

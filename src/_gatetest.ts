@@ -11,6 +11,7 @@
  */
 import { runGated, decide, resetGateMemory, DENIAL_MESSAGE } from "./safety/gate.js";
 import { confirmations } from "./safety/confirm.js";
+import { runInInvocation } from "./memory/invocation.js";
 import { TOOLS } from "./tools/registry.js";
 import type { ToolDef } from "./tools/registry.js";
 
@@ -111,6 +112,37 @@ console.log("  the user is not asked twice for one action");
   const b = await decide("run_terminal_command", { command: "rm /tmp/DIFFERENT" }, CTX);
   ok(asked.length === 2, "but a DIFFERENT command is asked about separately");
   ok(a.allowed && b.allowed, "and each gets its own answer");
+}
+{
+  // The real shape of the double-prompt bug. Claude's canUseTool asks BEFORE
+  // any invocation exists; runGated asks again from INSIDE a fresh one. If the
+  // dedupe key includes the call id, those are two different keys, the user is
+  // asked twice for one action — and again on every retry, which is what
+  // "I keep saying yes and it keeps asking" actually is.
+  fresh(true);
+  const input = { command: "rm -rf /tmp/double" };
+  const permissionLayer = await decide("run_terminal_command", input, CTX);
+  const insideInvocation = await runInInvocation(
+    { taskId: "standalone", actorId: "main", stepId: "tool:run_terminal_command", callId: "a-fresh-call-id", generation: 0, baseRevision: 0, resources: [] },
+    () => decide("run_terminal_command", input, CTX)
+  );
+  ok(asked.length === 1, `one action asks once across both layers (${asked.length})`);
+  ok(permissionLayer.allowed && insideInvocation.allowed, "and the approval carries into the layer that runs it");
+}
+{
+  // Same action, a second attempt: the model retrying must not re-ask inside
+  // the dedupe window either.
+  fresh(true);
+  const input = { command: "rm -rf /tmp/retry" };
+  await runInInvocation(
+    { taskId: "standalone", actorId: "main", stepId: "s", callId: "call-one", generation: 0, baseRevision: 0, resources: [] },
+    () => decide("run_terminal_command", input, CTX)
+  );
+  await runInInvocation(
+    { taskId: "standalone", actorId: "main", stepId: "s", callId: "call-two", generation: 0, baseRevision: 0, resources: [] },
+    () => decide("run_terminal_command", input, CTX)
+  );
+  ok(asked.length === 1, "a retry of the same action inside the window does not ask again");
 }
 {
   // The cache must not turn one "yes" into blanket approval later.

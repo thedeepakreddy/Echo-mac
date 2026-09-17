@@ -1,10 +1,150 @@
 {
   "name": "deepakllm-tools",
   "version": 1,
-  "generatedAt": "2026-07-21T18:10:05.017Z",
+  "generatedAt": "2026-09-11T22:01:48.209Z",
   "note": "The tool vocabulary DeepakLLM was trained on. A project reusing the model must expose these exact names, or translate them — the model will emit these regardless of what the host calls its own tools.",
-  "count": 95,
+  "count": 130,
   "tools": [
+    {
+      "name": "inspect_agent_replay",
+      "description": "Show Echo's recorded run timeline and a clear answer to why it ended. Use when a run stopped, failed, was interrupted, or the user asks to inspect the latest agent replay.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runId": {
+            "description": "Optional exact replay run ID. Omit to inspect the latest run.",
+            "type": "string"
+          },
+          "actorName": {
+            "description": "Optional actor name, such as 'Echo' or 'Echo Clone 1'. Omit for the latest actor.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_skill",
+      "description": "Teach yourself a new reusable skill by chaining tools you ALREADY have. Use this when the user describes a repeatable multi-step task ('make a skill that opens Mail, waits, and reads the screen'). Provide a name and an ordered list of steps, each naming an existing tool and its arguments. A skill is saved data, not code — it can only combine tools you already have.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A short name for the skill."
+          },
+          "description": {
+            "description": "What the skill does, in one line.",
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "tool"
+              ]
+            },
+            "description": "Ordered steps. Each 'tool' MUST be the name of an existing tool."
+          }
+        },
+        "required": [
+          "name",
+          "steps"
+        ]
+      }
+    },
+    {
+      "name": "list_skills",
+      "description": "List the skills the user has taught Echo. Use when they ask what skills or custom abilities you have.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "run_skill",
+      "description": "Run a skill the user previously taught you, by name. Each step runs as its own tool, so anything irreversible still asks for confirmation as usual.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The skill's name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "rewind_time",
+      "description": "The Undo Reality engine. Use this tool when the user makes a catastrophic mistake (deleting important files, breaking the system) and asks to rewind or undo reality.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "snapshotName": {
+            "description": "The specific APFS snapshot to rewind to. Leave blank to rewind to the most recent one.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "pull_from_phone",
+      "description": "The Ambient Device Mesh. Use this tool when the user asks you to pull context, URLs, or clipboard data from their iOS device (iPhone or iPad).",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deviceName": {
+            "description": "The specific device to pull from, e.g., 'iPhone' or 'iPad'. Leave blank to pull from any discovered device.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "toggle_companion_mode",
+      "description": "Toggle companion mode, which allows for more persistent and proactive assistance. Use this when the user requests a 'companion', 'co-pilot', or a closer working relationship.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "true to enable companion mode, false to disable it."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
     {
       "name": "check_health",
       "description": "Check the health of the Jarvis system. This verifies native binaries, running servers, AI models, and APIs. Use this when the user asks you to check your health or look for bugs/inconsistencies.",
@@ -347,6 +487,47 @@
       }
     },
     {
+      "name": "background_click",
+      "description": "Click at screen coordinates WITHOUT moving the physical mouse cursor, by pressing the UI element directly in the frontmost app. Use when you need to click something but must not disturb where the user's cursor is.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "description": "X coordinate in logical points"
+          },
+          "y": {
+            "type": "number",
+            "description": "Y coordinate in logical points"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "watch_my_screen",
+      "description": "Starts or stops a periodic background routine that watches the user's screen every 60 seconds to proactively track progress, issues, or what they are researching on Google/ChatGPT/Claude.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to start watching, false to stop"
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
       "name": "confirm_action",
       "description": "Ask the user out loud to approve something irreversible or outward-facing BEFORE you do it — sending a message or email, submitting a form, publishing, deleting something that isn't yours to delete, or confirming a purchase. Describe the action in one short spoken sentence, e.g. 'send the email to Priya about Friday'. Returns whether they agreed. Do not use it for ordinary clicking, typing, or reading.",
       "readOnly": false,
@@ -519,8 +700,26 @@
       }
     },
     {
+      "name": "set_remote_password",
+      "description": "Set (or change) the password that protects remote control of this Mac from a phone. Required before the phone remote can be opened. Use this when the user wants to set up phone control, or asks to change the remote password. At least 6 characters.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The password the user chooses for signing in from their phone."
+          }
+        },
+        "required": [
+          "password"
+        ]
+      }
+    },
+    {
       "name": "open_phone_remote",
-      "description": "Open a page the user can watch from their phone on the same Wi-Fi, showing everything Jarvis is doing, with a stop button. Use this when they want to monitor a long job from away from the desk, or ask to watch progress on their phone. It is view-and-stop only — nothing can be started from the phone.",
+      "description": "Open full remote control of this Mac from the user's phone: a live view of the screen, two-way talk, sending commands, and approving actions — all behind their password. Reachable from anywhere when both devices are on Tailscale, otherwise same Wi-Fi. Shows a QR code on screen to scan. Use this when they want to see, control, or drive the Mac from their phone. Requires a remote password to be set first (set_remote_password).",
       "readOnly": false,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -530,7 +729,7 @@
     },
     {
       "name": "close_phone_remote",
-      "description": "Close the phone remote and invalidate its link. Use this when the user is done watching, or asks you to stop sharing.",
+      "description": "Close the phone remote, sign everyone out, and invalidate its link. Use this when the user is done, or asks you to stop sharing or lock it down.",
       "readOnly": false,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -540,7 +739,7 @@
     },
     {
       "name": "phone_remote_status",
-      "description": "Report whether the phone remote is open, and the address to open on the phone.",
+      "description": "Report whether the phone remote is open, and show the QR code / link again to open it on the phone. Use this when the user asks for the phone link again, or 'show me the QR code'.",
       "readOnly": true,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -727,6 +926,161 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "show_creator_page",
+      "description": "Open a page for Jarvis's creator, Deepak (founder of AskDeepakAI), in a new browser window. Use this when the user asks to see the creator's page, GitHub, or LinkedIn. Defaults to GitHub if they don't specify.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "which": {
+            "description": "Which page to open. Defaults to github.",
+            "type": "string",
+            "enum": [
+              "github",
+              "linkedin"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "toggle_orbital_view",
+      "description": "Open or close the Orbital panel — a live, interactive satellite tracker (starport.im) wrapped in Echo's own frame. Use when the user asks to see satellites, the orbital view, what's in orbit, or space tracking.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "show": {
+            "description": "true to open (default), false to close.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "show_osiris",
+      "description": "Open (or close) the Osiris panel — the live global intelligence grid: a 3D world map layered with real-time flights, earthquakes, fires, satellites, CCTV cameras, undersea cables, conflict zones and 24/7 news. Use when the user asks to see the world map, the globe, global intelligence, OSINT, what's happening in the world, or Osiris by name. THE PANEL STAYS ON SCREEN until they ask to close it — never close it as tidying up, only when they say so. Pass layers to open it already showing something specific.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "show": {
+            "description": "true to open (default), false to close.",
+            "type": "boolean"
+          },
+          "layers": {
+            "description": "Layers to show on arrival — e.g. flights, earthquakes, fires, satellites, cameras, news, war, cables.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pin": {
+            "description": "Keep the grid above other windows and on every desktop.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "osiris_layers",
+      "description": "Turn layers on or off on the Osiris grid, or report which are showing. Layers include flights, private jets, military flights, ships, satellites, cameras, live news, earthquakes, fires, weather, radiation, infrastructure, conflict zones, undersea cables, day/night, terrain, malware and cyber attacks. Use when the user asks to add, remove, or check something on the world map. Opens the grid first if it isn't up.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "on": {
+            "description": "Layers to switch on, keeping what's already showing.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "off": {
+            "description": "Layers to switch off.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "only": {
+            "description": "Show exactly these and nothing else.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "osiris_intel",
+      "description": "Read a live Osiris intelligence feed and answer out loud — earthquakes, air traffic, fires, the OSINT news feed, satellites, conflict zones, space weather, severe weather, cyber threats, or an overall grid status. Use whenever the user asks what's happening in the world, whether anything has happened (a quake, a fire, a conflict), or for a world briefing. This reads data and does not need the panel open.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "feed": {
+            "type": "string",
+            "description": "Which feed: status, earthquakes, flights, fires, news, satellites, conflicts, space_weather, weather, or cyber."
+          }
+        },
+        "required": [
+          "feed"
+        ]
+      }
+    },
+    {
+      "name": "osiris_focus",
+      "description": "Point the Osiris globe at a place — a city, country, region or landmark. Use when the user asks to look at somewhere specific on the world map ('show me Ukraine', 'zoom into Tokyo'). Opens the grid first if it isn't up.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "place": {
+            "type": "string",
+            "description": "Where to look — a place name, as spoken."
+          },
+          "lat": {
+            "description": "Exact latitude, if known.",
+            "type": "number"
+          },
+          "lng": {
+            "description": "Exact longitude, if known.",
+            "type": "number"
+          },
+          "zoom": {
+            "description": "Zoom level, 2 (whole globe) to 12 (a city block). Defaults to 6.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "place"
+        ]
+      }
+    },
+    {
+      "name": "show_neural_core",
+      "description": "Open (or close) a 3D visual of Echo's own neural core — a spiral galaxy with a glowing core and clusters of data orbiting it. Use when the user asks to see your core, your neural schema, your mind, your brain, or 'show me your galaxy'.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "show": {
+            "description": "true to open (default), false to close.",
+            "type": "boolean"
+          }
+        }
       }
     },
     {
@@ -930,20 +1284,17 @@
     },
     {
       "name": "create_jarvis_tool",
-      "description": "Autonomously program a new tool for yourself. Provide the raw TypeScript object definition of the tool (following the existing ToolDef schema), and it will be permanently injected into your registry.ts. After injection, the system will rebuild and restart automatically.",
-      "readOnly": false,
+      "description": "Deprecated and disabled. To give Echo a new ability, use create_skill, which safely chains tools Echo already has instead of writing and running new code.",
+      "readOnly": true,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "toolCodeString": {
-            "type": "string",
-            "description": "The exact raw TypeScript code for the tool object, starting with `{ name: '...', ... }` and ending with `}`. It must be valid TS and must not break the file syntax."
+            "description": "Ignored.",
+            "type": "string"
           }
-        },
-        "required": [
-          "toolCodeString"
-        ]
+        }
       }
     },
     {
@@ -1025,7 +1376,7 @@
     },
     {
       "name": "delegate_task",
-      "description": "Multi-Agent Swarm: Delegate a massive background task to an independent LLM agent clone. Jarvis will spawn a background worker that completes the task and writes the result to a file.",
+      "description": "Delegate a background task to a durable, named Echo clone. The clone is logged and resumes from its checkpoint after an unexpected stop.",
       "readOnly": false,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1149,7 +1500,7 @@
     },
     {
       "name": "switch_brain",
-      "description": "Switch Jarvis's brain between Claude, Gemini, and Ollama (Llama 3), and instantly restart the application to apply the change. Use this when the user asks you to switch models or brains.",
+      "description": "Switch Echo's brain between Claude, Gemini, and Ollama (the local model). The swap happens live — no restart — though it does start a fresh conversation on the new brain. Use this when the user asks you to switch models or brains.",
       "readOnly": false,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1184,6 +1535,44 @@
             "type": "boolean"
           }
         }
+      }
+    },
+    {
+      "name": "scan_page",
+      "description": "Scan and PERMANENTLY remember what is on screen right now — a PDF, a screen of code, an email, a message thread, lecture notes, an image, or a web page. Unlike ordinary screen reading, a scan is kept forever and can be recalled by meaning months later. Use this whenever the user says 'scan this', 'remember this page', 'save this for later', 'keep this', or wants to be able to find something again in the future. After scanning, offer to save it to their Desktop.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "save_last_scan",
+      "description": "Save the most recently scanned page to the Desktop. Use this when the user answers yes to the offer after scan_page, or says 'save that', 'put it on my desktop', 'save the PDF'. Saves the real file when the scan was a document, otherwise the captured text or image.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "recall_scan",
+      "description": "Recall something the user previously asked you to SCAN — by meaning, not exact words. Use this for 'what was that PDF I scanned', 'find the code I saved last month', 'that email I scanned about the invoice', or any reference to a page they had you remember earlier. Searches only deliberately scanned pages, and works even months later.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What they're looking for, in their own words."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -1675,19 +2064,22 @@
     },
     {
       "name": "spawn_subagent",
-      "description": "Spawn a background sub-agent to handle a long-running, parallel GUI or web task asynchronously while you remain available to talk to the user. The sub-agent runs in its own isolated context.",
+      "description": "Spawn one or more background sub-agents to handle long-running, parallel GUI or web tasks asynchronously while you remain available to talk to the user. Each sub-agent runs in its own isolated context. Pass multiple goals to spawn multiple clones at once.",
       "readOnly": false,
       "parameters": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "goal": {
-            "type": "string",
-            "description": "Detailed instructions for the sub-agent"
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A list of detailed instructions, one for each sub-agent you wish to spawn."
           }
         },
         "required": [
-          "goal"
+          "goals"
         ]
       }
     },
@@ -1699,6 +2091,319 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "restart_system",
+      "description": "Reboots your entire core system and reloads the UI. Use this when the user asks you to restart, reboot, or refresh yourself.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "export_training_data",
+      "description": "Export the collected trajectory data for training. Use this when the user says 'save your data for training' or 'export training dataset'.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "adjust_brightness",
+      "description": "Adjusts the Mac screen brightness by simulating the physical brightness keys. You cannot set an absolute percentage.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "description": "Whether to turn the brightness up or down."
+          },
+          "steps": {
+            "description": "How many times to press the key (default 1, max 16).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "control_mac_setting",
+      "description": "Controls Mac system settings like WiFi, Bluetooth, Volume, Dark Mode, Sleep, and Screen Saver.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "setting": {
+            "type": "string",
+            "enum": [
+              "wifi",
+              "bluetooth",
+              "volume",
+              "mute",
+              "dark_mode",
+              "sleep",
+              "screen_saver",
+              "do_not_disturb"
+            ]
+          },
+          "action": {
+            "description": "Action to perform (default toggle)",
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "toggle",
+              "set"
+            ]
+          },
+          "value": {
+            "description": "Used for setting volume level (0-100).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "setting"
+        ]
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Send a message to another active agent (Main or a Clone). Use this for Swarm Intelligence.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "description": "The name of the recipient (e.g., 'Main' or 'Echo-clone 1')."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message content."
+          }
+        },
+        "required": [
+          "recipient",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "ask_user_approval",
+      "description": "Pause execution and pop up a native OS dialog asking the user to Approve or Reject an action. CRITICAL: ONLY use this for highly important/irreversible actions such as making payments, confirming before sending emails/messages, or accepting/rejecting calls. Do NOT use this for mundane tasks, as it will disturb the user unnecessarily.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The prompt to show the user (e.g., 'Approve sending email to CEO?')."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      }
+    },
+    {
+      "name": "create_worktree",
+      "description": "Create an isolated Git worktree in a temporary directory so you can safely build or modify code without affecting the user's main working directory.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repoPath": {
+            "type": "string",
+            "description": "The path to the git repository."
+          },
+          "branchName": {
+            "type": "string",
+            "description": "The name of the new branch to create."
+          }
+        },
+        "required": [
+          "repoPath",
+          "branchName"
+        ]
+      }
+    },
+    {
+      "name": "schedule_task",
+      "description": "Schedule a task to run automatically in the future by spawning a Clone. Useful for recurring checks (cron).",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "intervalSeconds": {
+            "type": "number",
+            "description": "The number of seconds between each run."
+          },
+          "goal": {
+            "type": "string",
+            "description": "The instruction to give the Clone when it wakes up."
+          }
+        },
+        "required": [
+          "intervalSeconds",
+          "goal"
+        ]
+      }
+    },
+    {
+      "name": "update_clone_progress",
+      "description": "Update the progress status of this Clone in the user's HUD dashboard (e.g. 'Scraped 15/100 pages').",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cloneName": {
+            "type": "string",
+            "description": "Your assigned clone name."
+          },
+          "progress": {
+            "type": "string",
+            "description": "The short progress status to display."
+          }
+        },
+        "required": [
+          "cloneName",
+          "progress"
+        ]
+      }
+    },
+    {
+      "name": "echoMaps",
+      "description": "CRITICAL: ALWAYS use this tool by default when the user asks for a map, to show a location, or to navigate somewhere. DO NOT use the browser/open_url to show maps unless the user EXPLICITLY asks to open the map \"in the browser\". This renders a holographic map directly on their screen.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "The destination or place to display on the map"
+          },
+          "startLocation": {
+            "description": "If the user asks for directions, provide the starting location. If they say \"from my location\", pass \"Current Location\" or their city.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Routing mode: d=driving (car), w=walking, b=bicycling, r=transit. Default is d.",
+            "type": "string",
+            "enum": [
+              "d",
+              "w",
+              "b",
+              "r"
+            ]
+          }
+        },
+        "required": [
+          "location"
+        ]
+      }
+    },
+    {
+      "name": "getActiveBrowserUrl",
+      "description": "Fetches the URL of the currently active tab in the user's frontmost browser (supports Brave, Chrome, Safari). Use this when the user says \"this video\" or \"this page\".",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "echoVideoPlayer",
+      "description": "Plays a YouTube video directly on the holographic HUD (using Privacy-Enhanced mode for an ad-free experience).",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The YouTube video URL to play"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "toggle_telepathy",
+      "description": "Turns on the Zero-Latency Telepathy (Gaze Tracking) engine. Requires Camera permissions.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "description": "True to turn on gaze tracking, false to turn it off."
+          }
+        },
+        "required": [
+          "enable"
+        ]
+      }
+    },
+    {
+      "name": "predict_next_command",
+      "description": "Suggest what the user is likely to do next, learned only from the commands they've given Echo before (no keylogging). Use to complete a half-typed command or anticipate the next one. Returns suggestions only — it never runs anything on its own.",
+      "readOnly": true,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "description": "A half-typed command to complete.",
+            "type": "string"
+          },
+          "after": {
+            "description": "A command just given, to predict what usually follows it.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "set_hud_skin",
+      "description": "Change which reactor the on-screen HUD shows. 'classic' is the round coil reactor; 'mark50' is the triangular chest reactor. Use when the user asks to change how you look, switch the reactor, or asks for a specific one by name. Pass no skin to report the current one.",
+      "readOnly": false,
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "skin": {
+            "description": "Which reactor to show. Omit to report what is showing now.",
+            "type": "string",
+            "enum": [
+              "classic",
+              "mark50"
+            ]
+          }
+        }
       }
     }
   ]
