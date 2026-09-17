@@ -33,8 +33,8 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   width: 100%; height: 100%; display: grid; grid-template-rows: 88px minmax(0, 1fr) 82px;
   overflow: hidden; border: 1px solid var(--line-strong);
   background:
-    radial-gradient(ellipse at 52% 42%, rgba(18, 66, 72, .16), transparent 43%),
-    linear-gradient(125deg, #020708, #050c0f 68%, #020709);
+    radial-gradient(ellipse at 52% 42%, rgba(18, 66, 72, .66), transparent 100%),
+    url('background.jpg') center/cover no-repeat;
 }
 
 .topbar {
