@@ -131,8 +131,8 @@ export function openControlPanel(anchor?: BrowserWindow | null): void {
   const height = Math.min(760, Math.max(320, area.height - 48));
   panel = new BrowserWindow({ width, height,
     x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2),
-    title: "ECHO — Intelligence Control", frame: false, transparent: false, backgroundColor: "#050b10",
-    resizable: false, fullscreenable: false, roundedCorners: false, show: false,
+    title: "ECHO — Intelligence Control", frame: false, transparent: true, backgroundColor: "#00000000",
+    resizable: false, fullscreenable: false, roundedCorners: true, show: false,
     webPreferences: { preload: join(here, "preload.cjs"), sandbox: true, contextIsolation: true,
       nodeIntegration: false, webSecurity: true },
   });

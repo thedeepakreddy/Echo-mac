@@ -47,7 +47,7 @@ const DIR = process.env.JARVIS_TRAJECTORY_DIR || join(homedir(), ".jarvis", "tra
 const SCREENS = join(DIR, "screens");
 
 /** Which brain produced the action. Never train on "deepakllm". */
-export type Source = "claude" | "gemini" | "ollama" | "deepakllm" | "reflex" | "shortcut" | "unknown";
+export type Source = "claude" | "gemini" | "ollama" | "deepakllm" | "openai" | "reflex" | "shortcut" | "unknown";
 
 export type Outcome = "success" | "failure" | "rejected";
 

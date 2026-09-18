@@ -92,6 +92,13 @@ if (brain === "gemini") {
     console.log(`  ${BAD} ${envName} is not set`);
     problems.push(`export ${envName}=...`);
   }
+} else if (brain === "openai") {
+  const envName = c?.openai?.apiKeyEnv ?? "OPENAI_API_KEY";
+  if (process.env[envName]) console.log(`  ${OK} ${envName} is set`);
+  else {
+    console.log(`  ${BAD} ${envName} is not set`);
+    problems.push(`export ${envName}=...`);
+  }
 } else {
   process.stdout.write(`  ${dim("checking Claude login…")}\r`);
   let verdict;

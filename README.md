@@ -1,4 +1,4 @@
-# J.A.R.V.I.S
+# Echo Mac
 
 A voice-activated, always-on-screen autonomous desktop assistant for macOS. A glowing
 floating HUD stays above every other app. Call it by name, ask it to do something, and it
@@ -211,7 +211,7 @@ But it authenticates through that CLI's own credential store, which is **separat
 Claude desktop app** — being signed into the desktop app is not enough. Log in once with the
 command above and it uses your existing Claude subscription (no API key).
 
-Symptom if you skip it: Jarvis launches, the HUD works, and every message — spoken or typed —
+Symptom if you skip it: Echo launches, the HUD works, and every message — spoken or typed —
 gets no reply, because the brain process exits immediately with `Invalid API key`.
 
 ### Check everything at once
@@ -232,12 +232,12 @@ Three permissions matter, all under **System Settings → Privacy & Security**:
 
 | Permission | Why | If missing |
 |---|---|---|
-| **Screen Recording** | `screenshot` can see the screen | Jarvis is blind — it captures only the wallpaper |
-| **Accessibility** | `cliclick` can move the mouse and type | **Fails silently** — Jarvis narrates actions that never land |
+| **Screen Recording** | `screenshot` can see the screen | Echo is blind — it captures only the wallpaper |
+| **Accessibility** | `cliclick` can move the mouse and type | **Fails silently** — Echo narrates actions that never land |
 | **Microphone** | hearing you | No voice; the HUD text box still works |
 
-**Which app do I grant?** macOS attaches these to the app that *launches* Jarvis, not to
-Jarvis itself. Running `npm start` from a terminal means granting your **terminal app**
+**Which app do I grant?** macOS attaches these to the app that *launches* Echo, not to
+Echo itself. Running `npm start` from a terminal means granting your **terminal app**
 (Terminal, iTerm, Ghostty…) and/or **Electron** at:
 
 ```
@@ -247,15 +247,15 @@ node_modules/electron/dist/Electron.app
 In the Settings pane click **+**, press **Cmd+Shift+G**, paste that path, add it. The surest
 route is simply to run `npm start` and let macOS prompt you — the dialog names the exact app.
 
-> **Permissions only take effect on a fresh launch.** After granting, fully quit Jarvis
+> **Permissions only take effect on a fresh launch.** After granting, fully quit Echo
 > (and the terminal, if you granted the terminal) and start again.
 
-Accessibility is the one that bites: without it screenshots still work, so Jarvis looks
+Accessibility is the one that bites: without it screenshots still work, so Echo looks
 like it's working while nothing it clicks or types actually happens.
 
 ## Using it
 
-- **Wake word:** say **"Jarvis"**, then your command (needs a Picovoice key, below).
+- **Wake word:** say **"Echo"**, then your command (needs a Picovoice key, below).
 - **Push-to-talk:** click the orb or press **⌘⇧J**, speak, and it endpoints on silence.
 - **Type:** use the text box in the HUD — always works, even with no mic/keys.
 - **Stop:** press **⌘⇧.** or the ◼ button to interrupt speaking/acting.
@@ -274,14 +274,14 @@ Copy `config.example.json` to `config.json` and edit. Key fields:
 - `gemini.model` + `GEMINI_API_KEY` env var: to use Gemini instead. If the key is missing
   it falls back to Claude automatically.
 - `voice.ttsVoice`: any macOS voice (`say -v '?'` lists them; `Daniel` is a good default).
-- `voice.wakeWord` + `PICOVOICE_ACCESS_KEY` env var: enables the "Jarvis" wake word via
+- `voice.wakeWord` + `PICOVOICE_ACCESS_KEY` env var: enables the "Echo" wake word via
   Picovoice Porcupine (free key at <https://console.picovoice.ai>). Without a key, the app
   runs in push-to-talk mode.
 
 ### Environment variables
 
 ```bash
-export PICOVOICE_ACCESS_KEY=...   # optional — enables the "Jarvis" wake word
+export PICOVOICE_ACCESS_KEY=...   # optional — enables the "Echo" wake word
 export GEMINI_API_KEY=...         # optional — only if brain: "gemini"
 export TELEGRAM_BOT_TOKEN=...     # optional — BotFather token for private Echo chat
 export ECHO_LOG_DIR="/path/to/echo-runs"  # optional — full durable journal; enabled by default
@@ -371,7 +371,7 @@ Restart Echo and send `/start` to the bot. Replies appear in Telegram and are sp
 npm run dev        # esbuild watch mode
 npm run typecheck  # tsc --noEmit
 npm run check      # plumbing self-test (MCP tools, Gemini schema, screen, Whisper STT)
-JARVIS_NO_VOICE=1 npm start   # launch without the mic (type-only) — handy for quick checks
+ECHO_NO_VOICE=1 npm start   # launch without the mic (type-only) — handy for quick checks
 npx esbuild src/_replaytest.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=/tmp/echo-replaytest.mjs && node /tmp/echo-replaytest.mjs
 ```
 
@@ -384,3 +384,61 @@ npx esbuild src/_replaytest.ts --bundle --platform=node --format=esm --target=no
   login or a payment authorization, it stops and asks you to do that step yourself.
 - Everything runs locally except the model inference (Claude/Gemini) and any browsing the
   agent does on your behalf.
+
+
+## Comprehensive Capabilities & Advanced Engineering
+
+Echo Mac is engineered to be a state-of-the-art, fully autonomous agentic wrapper for your operating system. It operates at the intersection of streaming multimodal AI and deep OS integration.
+
+### How Advanced Is It Engineered?
+- **Streaming Multimodal Pipeline**: Voice is processed via streaming Speech-to-Text (Sarvam, whisper.cpp, Apple) straight into LLM generative streams (Claude, Gemini, Ollama), which feed into an intelligent sentence chunker and instant Text-to-Speech (say, Sarvam, ElevenLabs).
+- **Crash-Tolerant Replay Journal**: Every action, tool call, and provider exchange is written to a crash-tolerant tape. If a model halts or a tool times out, Echo can safely replay exact provider recordings and resume gracefully.
+- **Dynamic Brain Switching**: Switch brains in real-time between Claude, Gemini, or Ollama just by saying their name. The system swaps the backend without dropping your UI or panels.
+- **True Vision & Semantic Understanding**: Beyond simple pixels, Echo parses the macOS accessibility tree to click precise UI elements, uses fast on-device OCR as a fallback (`read_screen_text`), and can even index your local documents to search by *meaning*, not just keywords.
+- **Local Autonomy & Privacy**: Local transcription, local OCR, on-device face detection (`check_presence`), and localized memory storage.
+- **Self-Expanding**: Echo has a `create_jarvis_tool` capability, allowing it to autonomously program and inject new tools into its own source code, rebuilding itself on the fly.
+
+### What Can Echo Do? (The Tool Arsenal)
+Echo ships with an arsenal of **around 130 tools** (including native tools, MCP servers, and LLM-SDK integrations), enabling it to perceive and manipulate the environment just like a human:
+
+#### 🖱️ Native Desktop Control & Navigation
+- **screenshot**, **get_screen_info**, **list_displays**, **read_display_text**
+- **move_mouse**, **click**, **drag**, **type_text**, **press_keys**, **set_value**, **scroll**
+- **list_ui_elements**, **click_ui_element**, **click_text** (via OCR)
+- **open_app**, **open_url**, **frontmost_app**, **move_window_to_display**
+- **extract_table** (pulls structured CSV data out of apps lacking export buttons)
+- **undo_recent**, **undo_last** (time-travel session rollback)
+- **dismiss_popups** (intelligently clear banners, warnings, and cookie notices)
+
+#### 🧠 Semantic Memory & Workflow Automation
+- **scan_page**, **recall_scan**, **save_last_scan** (Photographic semantic recall)
+- **remember**, **recall**, **forget**, **memory_status**, **search_long_term_memory** (Long-term persistent storage)
+- **learn_workflow**, **run_workflow**, **preview_workflow**, **list_workflows** (Watch you perform a task and learn to repeat it automatically)
+- **search_my_files**, **index_my_files** (Semantic search over local PDFs/Word docs)
+- **find_routines**, **find_commitments** (Automatically find patterns and extract promises made in conversation)
+
+#### 🕵️‍♂️ Context, Presence & Security
+- **away_mode**: Secures your Mac, pauses media, dims the HUD, and actively watches for your return.
+- **check_presence**, **presence_status**: On-device face detection to see if you are at the desk.
+- **what_changed_while_away**: Summarizes everything you missed on your screen while you stepped out.
+- **toggle_sonar**: (Batman Mode) Listens for massive acoustic spikes (alarms, glass breaking) in the background.
+- **toggle_eye_tracking**: (God Mode) Control the mouse with your nose and click by blinking.
+- **toggle_hand_gestures**: Control the OS using hand pinch, point, and swipe gestures.
+- **lock_screen**, **pause_media**, **attention_status**
+
+#### 🧑‍💻 Agentic Coding & Research
+- **run_terminal_command**, **read_local_file**, **write_local_file** (Full developer loop)
+- **try_approaches_in_parallel**: Clones a git repo, tries multiple fixes simultaneously, and keeps the one that passes tests.
+- **toggle_shadow_mode**, **accept_shadow_code**: An autonomous daemon that watches your IDE and proposes fixes when you get stuck.
+- **research_while_away**, **morning_brief**, **set_overnight_research**: Queues heavy research tasks for when you step away, presenting a brief upon your return.
+- **spawn_subagent**, **delegate_task**: Spawns Swarm clones to handle massive parallel workloads in the background.
+- **check_for_failures**: Scans your screen for build errors, stack traces, and test failures proactively.
+
+#### 🌐 Remote Access & Communication
+- **open_phone_remote**, **set_remote_password**: Full Tailscale-powered phone remote to drive your Mac from anywhere.
+- **handoff_to_ios**, **send_sms_message** (Offline iMessage/SMS continuity)
+- **translate_screen**, **show_translation**, **understand_dictation**
+
+#### 🎙️ Holographic UI & Meeting Assistant
+- **toggle_meeting_recording**, **search_audio_log** (Continuous room transcription and semantic search)
+- **show_data_pane**, **show_memory_carousel** (Render 3D carousels and holographic UI sidebars on screen)

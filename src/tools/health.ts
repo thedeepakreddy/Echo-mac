@@ -44,6 +44,14 @@ export async function check_health(): Promise<{ text: string }> {
     }
   }
 
+  // Check OpenAI API Key if active
+  if (config.brain === "openai") {
+    const envKey = config.openai?.apiKeyEnv || "OPENAI_API_KEY";
+    if (!process.env[envKey]) {
+      issues.push(`OpenAI API key is missing. The environment variable ${envKey} must be set.`);
+    }
+  }
+
   // Write to log
   const timestamp = new Date().toISOString();
   let logEntry = `[${timestamp}] Health Check Run\n`;

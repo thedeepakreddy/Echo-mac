@@ -3,10 +3,11 @@ import { homedir } from "node:os";
 import { join, isAbsolute } from "node:path";
 
 export interface JarvisConfig {
-  brain: "claude" | "gemini" | "ollama";
+  brain: "claude" | "gemini" | "ollama" | "openai";
   claude: { model: string; systemPromptPreset: "claude_code" | "none" };
   gemini: { model: string; apiKeyEnv: string };
   ollama: { model: string; host: string };
+  openai: { model: string; apiKeyEnv: string };
   voice: {
     wakeWord: boolean;
     /**
@@ -268,6 +269,7 @@ const DEFAULTS: JarvisConfig = {
   // gemini-2.5-flash is retired for new keys; 2.0-flash still resolves.
   gemini: { model: "gemini-2.0-flash", apiKeyEnv: "GEMINI_API_KEY" },
   ollama: { model: "llama3.2:3b", host: "http://localhost:11434" },
+  openai: { model: "gpt-4o", apiKeyEnv: "OPENAI_API_KEY" },
   voice: {
     wakeWord: true,
     wakeEngine: "auto",

@@ -72,6 +72,11 @@ export const LOOP_CAPS = {
   claude: {
     get maxTurns() { return capFromEnv("ECHO_MAX_ITERATIONS", 150); },
   },
+  openai: {
+    get maxIterations() { return capFromEnv("ECHO_MAX_ITERATIONS", 150); },
+    get autoContinueLimit() { return capFromEnv("ECHO_AUTO_CONTINUE_LIMIT", 5); },
+    modelFallbacks: 3,
+  },
 };
 
 /**

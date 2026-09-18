@@ -1347,14 +1347,14 @@ function controlRuntime(): ControlRuntime {
     voiceEnabled: cfg.voice.ttsEnabled,
     agents: swarm.list(),
     missions: swarm.listMissions(),
-    models: (["claude", "gemini", "ollama"] as Provider[]).map((id) => ({
+    models: (["claude", "gemini", "ollama", "openai"] as Provider[]).map((id) => ({
       id,
       label: PROVIDER_LABELS[id] ?? id,
-      model: id === "claude" ? cfg.claude.model : id === "gemini" ? cfg.gemini.model : cfg.ollama.model,
+      model: id === "claude" ? cfg.claude.model : id === "gemini" ? cfg.gemini.model : id === "openai" ? cfg.openai.model : cfg.ollama.model,
       active: id === provider,
-      available: !unavailableReason(id, process.env, cfg.gemini.apiKeyEnv),
-      ...(unavailableReason(id, process.env, cfg.gemini.apiKeyEnv)
-        ? { reason: unavailableReason(id, process.env, cfg.gemini.apiKeyEnv)! }
+      available: !unavailableReason(id, process.env, cfg.gemini.apiKeyEnv, cfg.openai.apiKeyEnv),
+      ...(unavailableReason(id, process.env, cfg.gemini.apiKeyEnv, cfg.openai.apiKeyEnv)
+        ? { reason: unavailableReason(id, process.env, cfg.gemini.apiKeyEnv, cfg.openai.apiKeyEnv)! }
         : {}),
     })),
     connections: Object.keys(configured).map((name) => {
