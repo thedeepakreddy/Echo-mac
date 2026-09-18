@@ -1,5 +1,7 @@
 # Echo Mac
 
+*Created by Deepak*
+
 A voice-activated, always-on-screen autonomous desktop assistant for macOS. A glowing
 floating HUD stays above every other app. Call it by name, ask it to do something, and it
 **sees your screen and drives your Mac** — clicking, typing, opening apps, browsing, and
