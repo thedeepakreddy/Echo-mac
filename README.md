@@ -1,4 +1,4 @@
-# J.A.R.V.I.S
+# Echo Mac
 
 A voice-activated, always-on-screen autonomous desktop assistant for macOS. A glowing
 floating HUD stays above every other app. Call it by name, ask it to do something, and it
@@ -211,7 +211,7 @@ But it authenticates through that CLI's own credential store, which is **separat
 Claude desktop app** — being signed into the desktop app is not enough. Log in once with the
 command above and it uses your existing Claude subscription (no API key).
 
-Symptom if you skip it: Jarvis launches, the HUD works, and every message — spoken or typed —
+Symptom if you skip it: Echo launches, the HUD works, and every message — spoken or typed —
 gets no reply, because the brain process exits immediately with `Invalid API key`.
 
 ### Check everything at once
@@ -232,12 +232,12 @@ Three permissions matter, all under **System Settings → Privacy & Security**:
 
 | Permission | Why | If missing |
 |---|---|---|
-| **Screen Recording** | `screenshot` can see the screen | Jarvis is blind — it captures only the wallpaper |
-| **Accessibility** | `cliclick` can move the mouse and type | **Fails silently** — Jarvis narrates actions that never land |
+| **Screen Recording** | `screenshot` can see the screen | Echo is blind — it captures only the wallpaper |
+| **Accessibility** | `cliclick` can move the mouse and type | **Fails silently** — Echo narrates actions that never land |
 | **Microphone** | hearing you | No voice; the HUD text box still works |
 
-**Which app do I grant?** macOS attaches these to the app that *launches* Jarvis, not to
-Jarvis itself. Running `npm start` from a terminal means granting your **terminal app**
+**Which app do I grant?** macOS attaches these to the app that *launches* Echo, not to
+Echo itself. Running `npm start` from a terminal means granting your **terminal app**
 (Terminal, iTerm, Ghostty…) and/or **Electron** at:
 
 ```
@@ -247,15 +247,15 @@ node_modules/electron/dist/Electron.app
 In the Settings pane click **+**, press **Cmd+Shift+G**, paste that path, add it. The surest
 route is simply to run `npm start` and let macOS prompt you — the dialog names the exact app.
 
-> **Permissions only take effect on a fresh launch.** After granting, fully quit Jarvis
+> **Permissions only take effect on a fresh launch.** After granting, fully quit Echo
 > (and the terminal, if you granted the terminal) and start again.
 
-Accessibility is the one that bites: without it screenshots still work, so Jarvis looks
+Accessibility is the one that bites: without it screenshots still work, so Echo looks
 like it's working while nothing it clicks or types actually happens.
 
 ## Using it
 
-- **Wake word:** say **"Jarvis"**, then your command (needs a Picovoice key, below).
+- **Wake word:** say **"Echo"**, then your command (needs a Picovoice key, below).
 - **Push-to-talk:** click the orb or press **⌘⇧J**, speak, and it endpoints on silence.
 - **Type:** use the text box in the HUD — always works, even with no mic/keys.
 - **Stop:** press **⌘⇧.** or the ◼ button to interrupt speaking/acting.
@@ -274,14 +274,14 @@ Copy `config.example.json` to `config.json` and edit. Key fields:
 - `gemini.model` + `GEMINI_API_KEY` env var: to use Gemini instead. If the key is missing
   it falls back to Claude automatically.
 - `voice.ttsVoice`: any macOS voice (`say -v '?'` lists them; `Daniel` is a good default).
-- `voice.wakeWord` + `PICOVOICE_ACCESS_KEY` env var: enables the "Jarvis" wake word via
+- `voice.wakeWord` + `PICOVOICE_ACCESS_KEY` env var: enables the "Echo" wake word via
   Picovoice Porcupine (free key at <https://console.picovoice.ai>). Without a key, the app
   runs in push-to-talk mode.
 
 ### Environment variables
 
 ```bash
-export PICOVOICE_ACCESS_KEY=...   # optional — enables the "Jarvis" wake word
+export PICOVOICE_ACCESS_KEY=...   # optional — enables the "Echo" wake word
 export GEMINI_API_KEY=...         # optional — only if brain: "gemini"
 export TELEGRAM_BOT_TOKEN=...     # optional — BotFather token for private Echo chat
 export ECHO_LOG_DIR="/path/to/echo-runs"  # optional — full durable journal; enabled by default
@@ -371,7 +371,7 @@ Restart Echo and send `/start` to the bot. Replies appear in Telegram and are sp
 npm run dev        # esbuild watch mode
 npm run typecheck  # tsc --noEmit
 npm run check      # plumbing self-test (MCP tools, Gemini schema, screen, Whisper STT)
-JARVIS_NO_VOICE=1 npm start   # launch without the mic (type-only) — handy for quick checks
+ECHO_NO_VOICE=1 npm start   # launch without the mic (type-only) — handy for quick checks
 npx esbuild src/_replaytest.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=/tmp/echo-replaytest.mjs && node /tmp/echo-replaytest.mjs
 ```
 
