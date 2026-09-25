@@ -18,6 +18,12 @@ The core loop is: **hear → see the screen → think → act → speak.**
                                     └────────────────────────────────────────────┘
 ```
 
+**Demo — the HUD state machine:** [`docs/echo-hud-states.mp4`](docs/echo-hud-states.mp4)
+(rendered from the shipping assets using the per-state values in `renderer/hud.css`).
+
+**Engineering deep dive:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the mechanisms,
+the invariants that hold them together, and the failures each one exists to prevent.
+
 
 ## Voice pipeline (real-time)
 
@@ -181,6 +187,10 @@ the whole conversation is a single continuous session. Its computer tools are an
 **in-process MCP server** (`createSdkMcpServer` + `tool()`) — no subprocess, and the
 `screenshot` tool returns a real image block. It authenticates by **riding your existing
 Claude Code login** — no API key needed.
+
+That table is the map. For how the pieces actually behave — the loop's exit contract, the
+single gated path to every tool, task leases and crash recovery, deterministic replay, and
+the wake-word logic — see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Setup
 
